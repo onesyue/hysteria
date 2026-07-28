@@ -53,6 +53,10 @@ func NewServer(config *Config) (Server, error) {
 		MaxStreamReceiveWindow:         config.QUICConfig.MaxStreamReceiveWindow,
 		InitialConnectionReceiveWindow: config.QUICConfig.InitialConnectionReceiveWindow,
 		MaxConnectionReceiveWindow:     config.QUICConfig.MaxConnectionReceiveWindow,
+		AllowConnectionWindowIncrease:  config.QUICConfig.AllowConnectionWindowIncrease,
+		AllowConnectionReceive:         config.QUICConfig.AllowConnectionReceive,
+		ReleaseConnectionReceive:       config.QUICConfig.ReleaseConnectionReceive,
+		NotifyConnectionClosed:         config.QUICConfig.NotifyConnectionClosed,
 		MaxIdleTimeout:                 config.QUICConfig.MaxIdleTimeout,
 		MaxIncomingStreams:             config.QUICConfig.MaxIncomingStreams,
 		DisablePathMTUDiscovery:        config.QUICConfig.DisablePathMTUDiscovery,
@@ -108,13 +112,17 @@ func (s *serverImpl) handleClient(conn *quic.Conn) {
 		StreamDispatcher: handler.ProxyStreamHijacker,
 	}
 	err := h3s.ServeQUICConn(conn)
+	authenticated, authID, untrack := handler.finish()
+	if untrack != nil {
+		untrack()
+	}
 	// If the client is authenticated, we need to log the disconnect event
-	if handler.authenticated {
+	if authenticated {
 		if tl := s.config.TrafficLogger; tl != nil {
-			tl.LogOnlineState(handler.authID, false)
+			tl.LogOnlineState(authID, false)
 		}
 		if el := s.config.EventLogger; el != nil {
-			el.Disconnect(conn.RemoteAddr(), handler.authID, err)
+			el.Disconnect(conn.RemoteAddr(), authID, err)
 		}
 	}
 	_ = conn.CloseWithError(closeErrCodeOK, "")
@@ -127,9 +135,18 @@ type h3sHandler struct {
 	authenticated bool
 	authMutex     sync.Mutex
 	authID        string
+	untrack       func()
 	connID        uint32 // a random id for dump streams
 
 	udpSM *udpSessionManager // Only set after authentication
+}
+
+func (h *h3sHandler) finish() (authenticated bool, authID string, untrack func()) {
+	h.authMutex.Lock()
+	defer h.authMutex.Unlock()
+	untrack = h.untrack
+	h.untrack = nil
+	return h.authenticated, h.authID, untrack
 }
 
 func newH3sHandler(config *Config, conn *quic.Conn) *h3sHandler {
@@ -158,7 +175,21 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		actualTx := authReq.Rx
 		ok, id := h.config.Authenticator.Authenticate(h.conn.RemoteAddr(), authReq.Auth, actualTx)
 		if ok {
-			// Set authenticated flag
+			if tracker, ok := h.config.TrafficLogger.(ConnectionTracker); ok {
+				var accepted bool
+				h.untrack, accepted = tracker.TrackConnection(id, func() error {
+					return h.conn.CloseWithError(closeErrCodeTrafficLimitReached, "")
+				})
+				if !accepted {
+					// The credential was removed after Authenticate returned but
+					// before this connection could be registered. Never publish a
+					// success response for that stale generation.
+					h.masqHandler(w, r)
+					return
+				}
+			}
+			// Publish authenticated and authID as one mutex-protected state only
+			// after the generation-aware tracker accepted registration.
 			h.authenticated = true
 			h.authID = id
 			if h.config.IgnoreClientBandwidth {
@@ -218,7 +249,10 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *h3sHandler) ProxyStreamHijacker(ft http3.FrameType, stream *quic.Stream, err error) (bool, error) {
-	if err != nil || !h.authenticated {
+	h.authMutex.Lock()
+	authenticated, authID := h.authenticated, h.authID
+	h.authMutex.Unlock()
+	if err != nil || !authenticated {
 		return false, nil
 	}
 
@@ -231,29 +265,33 @@ func (h *h3sHandler) ProxyStreamHijacker(ft http3.FrameType, stream *quic.Stream
 		}
 		// Wraps the stream with QStream, which handles Close() properly
 		qStream := &utils.QStream{Stream: stream}
-		go h.handleTCPRequest(qStream)
+		go h.handleTCPRequest(qStream, authID)
 		return true, nil
 	default:
 		return false, nil
 	}
 }
 
-func (h *h3sHandler) handleTCPRequest(stream *utils.QStream) {
+func (h *h3sHandler) handleTCPRequest(stream *utils.QStream, authID string) {
 	trafficLogger := h.config.TrafficLogger
 	streamStats := &StreamStats{
-		AuthID:      h.authID,
+		AuthID:      authID,
 		ConnID:      h.connID,
 		InitialTime: time.Now(),
 	}
 	streamStats.State.Store(StreamStateInitial)
 	streamStats.LastActiveTime.Store(time.Now())
-	defer func() {
-		streamStats.State.Store(StreamStateClosed)
-	}()
 	if trafficLogger != nil {
 		trafficLogger.TraceStream(stream, streamStats)
 		defer trafficLogger.UntraceStream(stream)
 	}
+	// Publish the final state before UntraceStream removes the stats object.
+	// Apart from making that lifecycle contract useful to loggers, this ensures
+	// no handler mutation can race a logger that releases its final reference
+	// from UntraceStream.
+	defer func() {
+		streamStats.State.Store(StreamStateClosed)
+	}()
 
 	// Read request
 	reqAddr, err := protocol.ReadTCPRequest(stream)
@@ -283,7 +321,7 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream) {
 	}
 	// Log the event
 	if h.config.EventLogger != nil {
-		h.config.EventLogger.TCPRequest(h.conn.RemoteAddr(), h.authID, reqAddr)
+		h.config.EventLogger.TCPRequest(h.conn.RemoteAddr(), authID, reqAddr)
 	}
 	// Dial target
 	streamStats.State.Store(StreamStateConnecting)
@@ -295,7 +333,7 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream) {
 		_ = stream.Close()
 		// Log the error
 		if h.config.EventLogger != nil {
-			h.config.EventLogger.TCPError(h.conn.RemoteAddr(), h.authID, reqAddr, err)
+			h.config.EventLogger.TCPError(h.conn.RemoteAddr(), authID, reqAddr, err)
 		}
 		return
 	}
@@ -310,13 +348,13 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream) {
 	}
 	// Start proxying
 	if trafficLogger != nil {
-		err = copyTwoWayEx(h.authID, stream, tConn, trafficLogger, streamStats)
+		err = copyTwoWayEx(authID, stream, tConn, trafficLogger, streamStats)
 	} else {
 		// Use the fast path if no traffic logger is set
 		err = copyTwoWay(stream, tConn)
 	}
 	if h.config.EventLogger != nil {
-		h.config.EventLogger.TCPError(h.conn.RemoteAddr(), h.authID, reqAddr, err)
+		h.config.EventLogger.TCPError(h.conn.RemoteAddr(), authID, reqAddr, err)
 	}
 	// Cleanup
 	_ = tConn.Close()

@@ -1,24 +1,33 @@
 package auth
 
 import (
+	"encoding/json"
 	"net"
-	"os/exec"
+	"net/http"
+	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestHTTPAuthenticator(t *testing.T) {
-	// Run the Python test auth server
-	cmd := exec.Command("python", "http_test.py")
-	err := cmd.Start()
-	assert.NoError(t, err)
-	defer cmd.Process.Kill()
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req httpAuthRequest
+		if r.Method != http.MethodPost || json.NewDecoder(r.Body).Decode(&req) != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		resp := httpAuthResponse{}
+		if req.Addr == "123.123.123.123:5566" && req.Auth == "wahaha" && req.Tx == 12345 {
+			resp.OK = true
+			resp.ID = "some_unique_id"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.NewEncoder(w).Encode(resp))
+	}))
+	defer testServer.Close()
 
-	time.Sleep(1 * time.Second) // Wait for the server to start
-
-	auth := NewHTTPAuthenticator("http://127.0.0.1:5000/auth", false)
+	auth := NewHTTPAuthenticator(testServer.URL+"/auth", false)
 
 	ok, id := auth.Authenticate(&net.UDPAddr{
 		IP:   net.ParseIP("1.2.3.4"),
