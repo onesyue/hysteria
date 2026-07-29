@@ -144,7 +144,11 @@ func (m *geositeMatcher) matchDomain(domain geositeDomain, host HostInfo) bool {
 		if host.Name == domain.Value {
 			return true
 		}
-		return strings.HasSuffix(host.Name, "."+domain.Value)
+		// Avoid allocating "."+domain.Value for every domain rule on every
+		// connection. Check the label boundary directly so lookalike suffixes
+		// (for example, notexample.com) still fail closed.
+		n, v := len(host.Name), len(domain.Value)
+		return n > v && host.Name[n-v-1] == '.' && host.Name[n-v:] == domain.Value
 	default:
 		return false
 	}
