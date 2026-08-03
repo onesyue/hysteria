@@ -1,5 +1,12 @@
 package bbr
 
+// initialRingSize 是 ring 第一次增长时直接跳到的容量。
+//
+// 取 8 而不是 1，是为了让「上来就有流量」的连接少走几次翻倍：从 8 到 256 只有
+// 5 次 grow，累计复制 248 个元素（约 22KB memmove），一条连接一生只付一次，
+// 相对于每条连接省下的 22KB 常驻堆完全不值一提。取 1 则要走 8 次。
+const initialRingSize = 8
+
 // A RingBuffer is a ring buffer.
 // It acts as a heap that doesn't cause any allocations.
 type RingBuffer[T any] struct {
@@ -8,9 +15,29 @@ type RingBuffer[T any] struct {
 	full             bool
 }
 
-// Init preallocs a buffer with a certain size.
+// Init 重置 ring buffer，并**故意不预分配** size 个元素。
+//
+// 为什么（2026-08-03 生产实测，yue-br 落地节点）：
+//
+//	原实现 `make([]T, size)` 在每条 QUIC 连接建立时就分配满额。bandwidthSampler
+//	对每条连接 Init 两个 ring：connectionStateMap 256 × 88B = 22.5KB，
+//	a0Candidates 256 × 16B = 4KB。落地节点上 HY2 客户端默认每 10s 发一次
+//	keepalive（core/client/config.go:defaultKeepAlivePeriod），所以一台低流量机
+//	常驻 ~1310 条 QUIC 连接却只有 6 条真在转发的流。pprof -inuse_space 实测：
+//	这两个 Init 占 32.7MB / 132MB 存活堆 = 24.7%，全部是空闲连接的预分配。
+//
+//	而这些 buffer 的实际高水位由「在途包数」决定：空闲连接每 10s 一个 PING，
+//	packetNumberIndexedQueue.clearup() 立刻把 front 弹掉，Len() 长期是个位数。
+//	预分配 256 是给满速连接准备的，却按连接数收费。
+//
+//	改成按需增长后，空闲连接常驻 8 槽（704B + 128B），满速连接照样长到 256+，
+//	行为与原实现逐操作等价（见 ringbuffer_lazy_test.go 的随机序列对拍）。
+//
+// size 保留在签名里只为不动调用方，且它仍诚实地描述「预期上限」。
 func (r *RingBuffer[T]) Init(size int) {
-	r.ring = make([]T, size)
+	_ = size
+	r.ring = nil
+	r.headPos, r.tailPos, r.full = 0, 0, false
 }
 
 // Len returns the number of elements in the ring buffer.
@@ -100,7 +127,7 @@ func (r *RingBuffer[T]) grow() {
 	oldRing := r.ring
 	newSize := len(oldRing) * 2
 	if newSize == 0 {
-		newSize = 1
+		newSize = initialRingSize
 	}
 	r.ring = make([]T, newSize)
 	headLen := copy(r.ring, oldRing[r.headPos:])
