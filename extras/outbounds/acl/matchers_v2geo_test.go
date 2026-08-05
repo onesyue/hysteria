@@ -139,3 +139,29 @@ func Test_geositeMatcher_Match(t *testing.T) {
 		})
 	}
 }
+
+func TestGeositeRootSuffixMatchIsAllocationFree(t *testing.T) {
+	m := &geositeMatcher{Domains: []geositeDomain{{
+		Type:  geositeDomainRoot,
+		Value: "example.com",
+	}}}
+	for _, test := range []struct {
+		name string
+		want bool
+	}{
+		{name: "example.com", want: true},
+		{name: "www.example.com", want: true},
+		{name: "notexample.com", want: false},
+		{name: "example.com.invalid", want: false},
+		{name: "", want: false},
+	} {
+		if got := m.Match(HostInfo{Name: test.name}); got != test.want {
+			t.Errorf("Match(%q) = %v, want %v", test.name, got, test.want)
+		}
+	}
+	if allocs := testing.AllocsPerRun(1000, func() {
+		_ = m.Match(HostInfo{Name: "www.example.com"})
+	}); allocs != 0 {
+		t.Fatalf("root suffix match allocations = %v, want 0", allocs)
+	}
+}

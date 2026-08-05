@@ -9,17 +9,27 @@ import (
 
 var errDisconnect = errors.New("traffic logger requested disconnect")
 
-var copyBufPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 32*1024)
-		return &b
-	},
+const (
+	copyBufMinShift = 12 // 4 KiB
+	copyBufLevels   = 4  // 4, 8, 16, 32 KiB
+	copyGrowReads   = 2
+)
+
+// Most proxy streams are idle or interactive. Start them at 4 KiB and grow
+// only after sustained full reads; bulk streams still reach 32 KiB quickly.
+var copyBufPools = [copyBufLevels]sync.Pool{
+	{New: func() any { b := make([]byte, 1<<copyBufMinShift); return &b }},
+	{New: func() any { b := make([]byte, 2<<copyBufMinShift); return &b }},
+	{New: func() any { b := make([]byte, 4<<copyBufMinShift); return &b }},
+	{New: func() any { b := make([]byte, 8<<copyBufMinShift); return &b }},
 }
 
 func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error {
-	bufp := copyBufPool.Get().(*[]byte)
+	level := 0
+	bufp := copyBufPools[level].Get().(*[]byte)
 	buf := *bufp
-	defer copyBufPool.Put(bufp)
+	defer func() { copyBufPools[level].Put(bufp) }()
+	fullReads := 0
 
 	for {
 		nr, er := src.Read(buf)
@@ -28,9 +38,25 @@ func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error 
 				// Log returns false, which means that the client should be disconnected
 				return errDisconnect
 			}
-			_, ew := dst.Write(buf[0:nr])
+			nw, ew := dst.Write(buf[0:nr])
 			if ew != nil {
 				return ew
+			}
+			if nw != nr {
+				return io.ErrShortWrite
+			}
+
+			if nr == len(buf) {
+				fullReads++
+			} else {
+				fullReads = 0
+			}
+			if fullReads >= copyGrowReads && level+1 < len(copyBufPools) {
+				copyBufPools[level].Put(bufp)
+				level++
+				bufp = copyBufPools[level].Get().(*[]byte)
+				buf = *bufp
+				fullReads = 0
 			}
 		}
 		if er != nil {

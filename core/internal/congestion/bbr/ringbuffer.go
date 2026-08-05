@@ -1,5 +1,7 @@
 package bbr
 
+const initialRingSize = 8
+
 // A RingBuffer is a ring buffer.
 // It acts as a heap that doesn't cause any allocations.
 type RingBuffer[T any] struct {
@@ -8,9 +10,13 @@ type RingBuffer[T any] struct {
 	full             bool
 }
 
-// Init preallocs a buffer with a certain size.
+// Init resets the buffer without preallocating the requested capacity. BBR
+// creates two 256-slot rings per connection, although idle connections usually
+// never retain more than a handful of entries. Active rings grow on demand.
 func (r *RingBuffer[T]) Init(size int) {
-	r.ring = make([]T, size)
+	_ = size
+	r.ring = nil
+	r.headPos, r.tailPos, r.full = 0, 0, false
 }
 
 // Len returns the number of elements in the ring buffer.
@@ -100,7 +106,7 @@ func (r *RingBuffer[T]) grow() {
 	oldRing := r.ring
 	newSize := len(oldRing) * 2
 	if newSize == 0 {
-		newSize = 1
+		newSize = initialRingSize
 	}
 	r.ring = make([]T, newSize)
 	headLen := copy(r.ring, oldRing[r.headPos:])

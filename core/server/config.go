@@ -129,6 +129,10 @@ type QUICConfig struct {
 	MaxStreamReceiveWindow         uint64
 	InitialConnectionReceiveWindow uint64
 	MaxConnectionReceiveWindow     uint64
+	AllowConnectionWindowIncrease  func(conn *quic.Conn, delta uint64) bool
+	AllowConnectionReceive         func(conn *quic.Conn, delta uint64) bool
+	ReleaseConnectionReceive       func(conn *quic.Conn, delta uint64)
+	NotifyConnectionClosed         func(conn *quic.Conn)
 	MaxIdleTimeout                 time.Duration
 	MaxIncomingStreams             int64
 	DisablePathMTUDiscovery        bool // The server may still override this to true on unsupported platforms.
@@ -260,6 +264,14 @@ type TrafficLogger interface {
 	LogOnlineState(id string, online bool)
 	TraceStream(stream HyStream, stats *StreamStats)
 	UntraceStream(stream HyStream)
+}
+
+// ConnectionTracker is an optional extension for traffic loggers that need
+// eager user-scoped disconnects. Registration happens after Authenticate and
+// before the successful response is published, closing the stale-credential
+// race. The returned cleanup removes exactly this registration.
+type ConnectionTracker interface {
+	TrackConnection(id string, closeFn func() error) (untrack func(), accepted bool)
 }
 
 type StreamState int

@@ -144,7 +144,10 @@ func (m *geositeMatcher) matchDomain(domain geositeDomain, host HostInfo) bool {
 		if host.Name == domain.Value {
 			return true
 		}
-		return strings.HasSuffix(host.Name, "."+domain.Value)
+		// Avoid allocating "."+domain.Value for every rule comparison while
+		// preserving the DNS label boundary.
+		n, v := len(host.Name), len(domain.Value)
+		return n > v && host.Name[n-v-1] == '.' && host.Name[n-v:] == domain.Value
 	default:
 		return false
 	}
