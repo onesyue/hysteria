@@ -85,13 +85,21 @@ func TestClientServerTrafficLoggerTCP(t *testing.T) {
 	time.Sleep(1 * time.Second) // Need some time for the server to receive the data
 
 	// Client reads from server again but blocked
-	trafficLogger.EXPECT().UntraceStream(mock.Anything).Return().Once()
+	streamDone := make(chan struct{})
+	trafficLogger.EXPECT().UntraceStream(mock.Anything).Run(func(server.HyStream) {
+		close(streamDone)
+	}).Return().Once()
 	trafficLogger.EXPECT().LogTraffic("nobody", uint64(0), uint64(4)).Return(false).Once()
 	trafficLogger.EXPECT().LogOnlineState("nobody", false).Return().Once()
 	sobConnCh <- []byte("nope")
 	n, err = conn.Read(buf)
 	assert.Zero(t, n)
 	assert.Error(t, err)
+	select {
+	case <-streamDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the server stream handler to stop")
+	}
 
 	// The client should be disconnected
 	_, err = c.TCP("whatever")
