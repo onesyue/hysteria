@@ -1,4 +1,4 @@
-FROM golang:1-alpine AS builder
+FROM golang:1.26.6-alpine3.24@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
 
 # GOPROXY is disabled by default, use:
 # docker build --build-arg GOPROXY="https://goproxy.io" ...
@@ -17,7 +17,7 @@ RUN set -ex \
     && mv ./build/hysteria-* /go/bin/hysteria
 
 # multi-stage builds to create the final image
-FROM alpine AS dist
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS dist
 
 # set up nsswitch.conf for Go's "netgo" implementation
 # - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275
