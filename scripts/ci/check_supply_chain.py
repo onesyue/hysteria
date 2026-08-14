@@ -94,6 +94,12 @@ require(
     "Dockerfile: checked-out private dependency workspace missing",
 )
 
+hyperbole = (ROOT / "hyperbole.py").read_text(encoding="utf-8")
+require(
+    '["gofumpt", "-l", "-extra", *MODULE_SRC_DIRS]' in hyperbole,
+    "hyperbole.py: format check must stay scoped to first-party modules",
+)
+
 uv_lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 require(
     re.search(r'(?ms)^name = "cryptography"\nversion = "50\.0\.0"$', uv_lock) is not None,
