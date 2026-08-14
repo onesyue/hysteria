@@ -3,17 +3,19 @@ package utils
 import (
 	"crypto/tls"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
-	testListen   = "127.82.39.147:12947"
 	testCAFile   = "./testcerts/ca"
 	testCertFile = "./testcerts/cert"
 	testKeyFile  = "./testcerts/key"
@@ -33,71 +35,76 @@ func TestCertificateLoaderPathError(t *testing.T) {
 }
 
 func TestCertificateLoaderFullChain(t *testing.T) {
-	assert.NoError(t, generateTestCertificate([]string{"example.com"}, "fullchain"))
+	require.NoError(t, generateTestCertificate([]string{"example.com"}, "fullchain"))
 
 	loader := LocalCertificateLoader{
 		CertFile: testCertFile,
 		KeyFile:  testKeyFile,
 		SNIGuard: SNIGuardStrict,
 	}
-	assert.NoError(t, loader.InitializeCache())
+	require.NoError(t, loader.InitializeCache())
+	testListen := startTestTLSServer(t, &loader)
 
-	lis, err := tls.Listen("tcp", testListen, &tls.Config{
-		GetCertificate: loader.GetCertificate,
-	})
-	assert.NoError(t, err)
-	defer lis.Close()
-	go http.Serve(lis, nil)
-
-	assert.Error(t, runTestTLSClient("unmatched-sni.example.com"))
-	assert.Error(t, runTestTLSClient(""))
-	assert.NoError(t, runTestTLSClient("example.com"))
+	assert.Error(t, runTestTLSClient(testListen, "unmatched-sni.example.com"))
+	assert.Error(t, runTestTLSClient(testListen, ""))
+	assert.NoError(t, runTestTLSClient(testListen, "example.com"))
 }
 
 func TestCertificateLoaderNoSAN(t *testing.T) {
-	assert.NoError(t, generateTestCertificate(nil, "selfsign"))
+	require.NoError(t, generateTestCertificate(nil, "selfsign"))
 
 	loader := LocalCertificateLoader{
 		CertFile: testCertFile,
 		KeyFile:  testKeyFile,
 		SNIGuard: SNIGuardDNSSAN,
 	}
-	assert.NoError(t, loader.InitializeCache())
+	require.NoError(t, loader.InitializeCache())
+	testListen := startTestTLSServer(t, &loader)
 
-	lis, err := tls.Listen("tcp", testListen, &tls.Config{
-		GetCertificate: loader.GetCertificate,
-	})
-	assert.NoError(t, err)
-	defer lis.Close()
-	go http.Serve(lis, nil)
-
-	assert.NoError(t, runTestTLSClient(""))
+	assert.NoError(t, runTestTLSClient(testListen, ""))
 }
 
 func TestCertificateLoaderReplaceCertificate(t *testing.T) {
-	assert.NoError(t, generateTestCertificate([]string{"example.com"}, "fullchain"))
+	require.NoError(t, generateTestCertificate([]string{"example.com"}, "fullchain"))
 
 	loader := LocalCertificateLoader{
 		CertFile: testCertFile,
 		KeyFile:  testKeyFile,
 		SNIGuard: SNIGuardStrict,
 	}
-	assert.NoError(t, loader.InitializeCache())
+	require.NoError(t, loader.InitializeCache())
+	testListen := startTestTLSServer(t, &loader)
 
-	lis, err := tls.Listen("tcp", testListen, &tls.Config{
+	assert.NoError(t, runTestTLSClient(testListen, "example.com"))
+	assert.Error(t, runTestTLSClient(testListen, "2.example.com"))
+
+	require.NoError(t, generateTestCertificate([]string{"2.example.com"}, "fullchain"))
+
+	assert.Error(t, runTestTLSClient(testListen, "example.com"))
+	assert.NoError(t, runTestTLSClient(testListen, "2.example.com"))
+}
+
+func startTestTLSServer(t *testing.T, loader *LocalCertificateLoader) string {
+	t.Helper()
+
+	rawListener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	listener := tls.NewListener(rawListener, &tls.Config{
 		GetCertificate: loader.GetCertificate,
 	})
-	assert.NoError(t, err)
-	defer lis.Close()
-	go http.Serve(lis, nil)
-
-	assert.NoError(t, runTestTLSClient("example.com"))
-	assert.Error(t, runTestTLSClient("2.example.com"))
-
-	assert.NoError(t, generateTestCertificate([]string{"2.example.com"}, "fullchain"))
-
-	assert.Error(t, runTestTLSClient("example.com"))
-	assert.NoError(t, runTestTLSClient("2.example.com"))
+	server := &http.Server{ReadHeaderTimeout: time.Second}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		select {
+		case err := <-serveDone:
+			require.ErrorIs(t, err, http.ErrServerClosed)
+		case <-time.After(5 * time.Second):
+			t.Error("TLS test server did not stop after Close")
+		}
+	})
+	return listener.Addr().String()
 }
 
 func generateTestCertificate(dnssan []string, certType string) error {
@@ -120,10 +127,10 @@ func generateTestCertificate(dnssan []string, certType string) error {
 	return nil
 }
 
-func runTestTLSClient(sni string) error {
+func runTestTLSClient(server, sni string) error {
 	args := []string{
 		"certloader_test_tlsclient.py",
-		"--server", testListen,
+		"--server", server,
 		"--ca", testCAFile,
 	}
 	if sni != "" {
