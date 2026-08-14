@@ -399,7 +399,7 @@ def cmd_format():
         return
 
     try:
-        subprocess.check_call(["gofumpt", "-w", "-l", "-extra", "."])
+        subprocess.check_call(["gofumpt", "-w", "-l", "-extra", *MODULE_SRC_DIRS])
     except Exception:
         print("Failed to format code")
 
@@ -411,7 +411,9 @@ def cmd_format_check():
 
     try:
         output = (
-            subprocess.check_output(["gofumpt", "-l", "-extra", "."]).decode().strip()
+            subprocess.check_output(
+                ["gofumpt", "-l", "-extra", *MODULE_SRC_DIRS]
+            ).decode().strip()
         )
     except Exception:
         print("Failed to check code format")
