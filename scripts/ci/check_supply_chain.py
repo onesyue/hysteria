@@ -71,7 +71,7 @@ for workflow_name in ("test.yml", "build-common.yml", "docker.yml"):
 for workflow_name in ("test.yml", "build-common.yml"):
     contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
     require(
-        "go work init ./core ./extras ./app ./.ci/quic-go" in contents,
+        "go work use ./.ci/quic-go" in contents,
         f"{workflow_name}: local private dependency workspace missing",
     )
 
@@ -90,7 +90,7 @@ for line_number, line in enumerate(dockerfile.splitlines(), 1):
             f"Dockerfile:{line_number}: base image is not digest-pinned",
         )
 require(
-    "go work init ./core ./extras ./app ./.ci/quic-go" in dockerfile,
+    "go work use ./.ci/quic-go" in dockerfile,
     "Dockerfile: checked-out private dependency workspace missing",
 )
 
