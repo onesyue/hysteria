@@ -14,6 +14,15 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Check out private quic-go dependency
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: onesyue/quic-go
+          ref: 870c4d4ab48b1a9d8a1f9e2bc82f992b074a6ea1
+          path: .ci/quic-go
+          ssh-key: ${{ secrets.QUIC_GO_DEPLOY_KEY }}
+          persist-credentials: false
+
       - name: Check supply-chain contracts
         run: python3 scripts/ci/check_supply_chain.py
 
@@ -21,6 +30,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.6"
+
+      - name: Use checked-out private dependency
+        run: go work init ./core ./extras ./app ./.ci/quic-go
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0

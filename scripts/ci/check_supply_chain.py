@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 ERRORS: list[str] = []
+QUIC_GO_COMMIT = "870c4d4ab48b1a9d8a1f9e2bc82f992b074a6ea1"
 
 
 def require(condition: bool, message: str) -> None:
@@ -57,6 +58,30 @@ for workflow_name in ("test.yml", "build-common.yml", "release.yml"):
     contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
     require('version: "0.12.0"' in contents, f"{workflow_name}: uv 0.12.0 pin missing")
 
+for workflow_name in ("test.yml", "build-common.yml", "docker.yml"):
+    contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
+    require("repository: onesyue/quic-go" in contents, f"{workflow_name}: private dependency checkout missing")
+    require(f"ref: {QUIC_GO_COMMIT}" in contents, f"{workflow_name}: quic-go commit pin missing")
+    require(
+        "ssh-key: ${{ secrets.QUIC_GO_DEPLOY_KEY }}" in contents,
+        f"{workflow_name}: read-only deploy key wiring missing",
+    )
+    require("persist-credentials: false" in contents, f"{workflow_name}: checkout credentials persist")
+
+for workflow_name in ("test.yml", "build-common.yml"):
+    contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
+    require(
+        "go work init ./core ./extras ./app ./.ci/quic-go" in contents,
+        f"{workflow_name}: local private dependency workspace missing",
+    )
+
+for workflow_name in ("release.yml", "master.yml", "experimental.yml"):
+    contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
+    require(
+        "QUIC_GO_DEPLOY_KEY: ${{ secrets.QUIC_GO_DEPLOY_KEY }}" in contents,
+        f"{workflow_name}: reusable build deploy key forwarding missing",
+    )
+
 dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 for line_number, line in enumerate(dockerfile.splitlines(), 1):
     if line.startswith("FROM "):
@@ -64,6 +89,10 @@ for line_number, line in enumerate(dockerfile.splitlines(), 1):
             re.search(r"@sha256:[0-9a-f]{64}(?:\s|$)", line) is not None,
             f"Dockerfile:{line_number}: base image is not digest-pinned",
         )
+require(
+    "go work init ./core ./extras ./app ./.ci/quic-go" in dockerfile,
+    "Dockerfile: checked-out private dependency workspace missing",
+)
 
 uv_lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 require(

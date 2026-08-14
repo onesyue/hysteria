@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/build-common.yml
+    secrets:
+      QUIC_GO_DEPLOY_KEY: ${{ secrets.QUIC_GO_DEPLOY_KEY }}
 
   publish:
     name: Publish
