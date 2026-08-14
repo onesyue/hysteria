@@ -38,7 +38,17 @@ if events_match is not None:
 action_ref = re.compile(r"^\s*uses:\s*(?P<ref>[^\s#]+)")
 immutable_action_ref = re.compile(r"^[^@]+@[0-9a-f]{40}$")
 for workflow in sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml"))):
-    for line_number, line in enumerate(workflow.read_text(encoding="utf-8").splitlines(), 1):
+    workflow_contents = workflow.read_text(encoding="utf-8")
+    require(
+        "ACTIONS_ALLOW_UNSECURE_COMMANDS" not in workflow_contents,
+        f"{workflow.relative_to(ROOT)}: legacy workflow command opt-out is forbidden",
+    )
+    require(
+        "::set-output " not in workflow_contents
+        and "::save-state " not in workflow_contents,
+        f"{workflow.relative_to(ROOT)}: legacy stdout workflow command is forbidden",
+    )
+    for line_number, line in enumerate(workflow_contents.splitlines(), 1):
         match = action_ref.match(line)
         if match is None:
             continue
