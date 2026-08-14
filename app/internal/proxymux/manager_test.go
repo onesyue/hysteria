@@ -5,100 +5,96 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
+const testLocalAddress = "127.0.0.1:0"
+
 func TestListenSOCKS(t *testing.T) {
-	address := "127.2.39.129:11081"
+	address := testLocalAddress
 
 	sl, err := ListenSOCKS(address)
-	if !assert.NoError(t, err) {
-		return
-	}
-	defer func() {
-		sl.Close()
-	}()
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, sl)
 
 	hl, err := ListenHTTP(address)
-	if !assert.NoError(t, err) {
-		return
-	}
-	defer hl.Close()
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, hl)
 
 	_, err = ListenSOCKS(address)
-	if !assert.ErrorIs(t, err, ErrProtocolInUse) {
-		return
-	}
-	sl.Close()
+	require.ErrorIs(t, err, ErrProtocolInUse)
+	require.NoError(t, sl.Close())
 
 	sl, err = ListenSOCKS(address)
-	if !assert.NoError(t, err) {
-		return
-	}
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, sl)
+
+	require.NoError(t, sl.Close())
+	require.NoError(t, hl.Close())
+	requireMuxReleased(t, address)
 }
 
 func TestListenHTTP(t *testing.T) {
-	address := "127.2.39.129:11082"
+	address := testLocalAddress
 
 	hl, err := ListenHTTP(address)
-	if !assert.NoError(t, err) {
-		return
-	}
-	defer func() {
-		hl.Close()
-	}()
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, hl)
 
 	sl, err := ListenSOCKS(address)
-	if !assert.NoError(t, err) {
-		return
-	}
-	defer sl.Close()
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, sl)
 
 	_, err = ListenHTTP(address)
-	if !assert.ErrorIs(t, err, ErrProtocolInUse) {
-		return
-	}
-	hl.Close()
+	require.ErrorIs(t, err, ErrProtocolInUse)
+	require.NoError(t, hl.Close())
 
 	hl, err = ListenHTTP(address)
-	if !assert.NoError(t, err) {
-		return
-	}
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, hl)
+
+	require.NoError(t, hl.Close())
+	require.NoError(t, sl.Close())
+	requireMuxReleased(t, address)
 }
 
 func TestRelease(t *testing.T) {
-	address := "127.2.39.129:11083"
+	address := testLocalAddress
 
 	hl, err := ListenHTTP(address)
-	if !assert.NoError(t, err) {
-		return
-	}
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, hl)
 	sl, err := ListenSOCKS(address)
-	if !assert.NoError(t, err) {
-		return
-	}
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, sl)
 
-	if !assert.True(t, globalMuxManager.testAddressExists(address)) {
-		return
+	require.True(t, globalMuxManager.testAddressExists(address))
+	boundAddress := hl.Addr().String()
+	probe, err := net.Listen("tcp", boundAddress)
+	if err == nil {
+		require.NoError(t, probe.Close())
 	}
-	_, err = net.Listen("tcp", address)
-	if !assert.Error(t, err) {
-		return
-	}
+	require.Error(t, err)
 
-	hl.Close()
-	sl.Close()
+	require.NoError(t, hl.Close())
+	require.NoError(t, sl.Close())
 
-	// Wait for muxListener released
-	time.Sleep(time.Second)
-	if !assert.False(t, globalMuxManager.testAddressExists(address)) {
-		return
-	}
-	lis, err := net.Listen("tcp", address)
-	if !assert.NoError(t, err) {
-		return
-	}
-	defer lis.Close()
+	requireMuxReleased(t, address)
+	lis, err := net.Listen("tcp", boundAddress)
+	require.NoError(t, err)
+	closeListenerOnCleanup(t, lis)
+}
+
+func closeListenerOnCleanup(t *testing.T, listener net.Listener) {
+	t.Helper()
+	t.Cleanup(func() { require.NoError(t, listener.Close()) })
+}
+
+func requireMuxReleased(t *testing.T, address string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return !globalMuxManager.testAddressExists(address)
+	}, 5*time.Second, 5*time.Millisecond)
 }
 
 func (m *muxManager) testAddressExists(address string) bool {
