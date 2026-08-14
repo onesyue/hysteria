@@ -13,7 +13,7 @@ WORKDIR /go/src/github.com/apernet/hysteria
 
 RUN set -ex \
     && apk add git build-base bash python3 \
-    && go work use ./.ci/quic-go \
+    && go work edit -replace=github.com/apernet/quic-go=./.ci/quic-go \
     && python hyperbole.py build -r \
     && mv ./build/hysteria-* /go/bin/hysteria
 
