@@ -2,11 +2,7 @@ name: "Tests"
 
 on:
   push:
-    branches:
-      - master
   pull_request:
-    branches:
-      - master
 
 jobs:
   test:
@@ -16,6 +12,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check supply-chain contracts
+        run: python3 scripts/ci/check_supply_chain.py
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
