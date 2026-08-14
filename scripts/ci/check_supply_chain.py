@@ -53,6 +53,11 @@ for workflow in sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml"))):
 for workflow_name in ("test.yml", "build-common.yml"):
     contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
     require('go-version: "1.26.6"' in contents, f"{workflow_name}: Go 1.26.6 pin missing")
+    for dependency_path in ("core/go.sum", "extras/go.sum", "app/go.sum"):
+        require(
+            dependency_path in contents,
+            f"{workflow_name}: Go cache dependency {dependency_path} missing",
+        )
 
 for workflow_name in ("test.yml", "build-common.yml", "release.yml"):
     contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
