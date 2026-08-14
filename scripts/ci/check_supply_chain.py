@@ -28,6 +28,10 @@ if events_match is not None:
         re.search(r"(?m)^  pull_request:\s*$", events) is not None,
         "test.yml: pull_request trigger missing",
     )
+    require(
+        re.search(r"(?m)^  workflow_dispatch:\s*$", events) is not None,
+        "test.yml: workflow_dispatch trigger missing",
+    )
     require("branches:" not in events, "test.yml: branch filters can exclude the default branch")
 
 action_ref = re.compile(r"^\s*uses:\s*(?P<ref>[^\s#]+)")
