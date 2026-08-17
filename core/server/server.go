@@ -76,7 +76,7 @@ func NewServer(config *Config) (Server, error) {
 		}
 		srk = &k
 	}
-	tr := &quic.Transport{Conn: config.Conn, StatelessResetKey: srk}
+	tr := &quic.Transport{Conn: config.Conn, StatelessResetKey: srk, DisableGSO: config.QUICConfig.DisableGSO}
 	listener, err := tr.Listen(tlsConfig, quicConfig)
 	if err != nil {
 		err = errors.Join(err, tr.Close(), config.Conn.Close())
