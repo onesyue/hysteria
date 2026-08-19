@@ -7,7 +7,9 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -57,8 +59,10 @@ func (s *tcpStressor) Run(t *testing.T) {
 			}()
 		}
 		wg.Wait()
-
-		assert.Empty(t, errChan)
+		close(errChan)
+		for err := range errChan {
+			assert.NoError(t, err)
+		}
 	}
 }
 
@@ -77,9 +81,11 @@ func (s *udpStressor) Run(t *testing.T) {
 	_, err := rand.Read(sData)
 	assert.NoError(t, err)
 
-	// Due to UDP's unreliability, we need to limit the rate of sending
-	// to reduce packet loss. This is hardcoded to 1 MiB/s for now.
-	limiter := rate.NewLimiter(1048576, 1048576)
+	// Due to UDP's unreliability, limit sending to 1 MiB/s. Keep the burst
+	// substantially below the QUIC / kernel queues: a 1 MiB burst lets the
+	// entire 1000x100-byte case bypass rate limiting and makes packet loss
+	// depend on resource pressure from earlier tests in the same process.
+	limiter := rate.NewLimiter(1048576, 16*1024)
 
 	// Run iterations
 	for i := 0; i < s.Iterations; i++ {
@@ -96,31 +102,81 @@ func (s *udpStressor) Run(t *testing.T) {
 					return
 				}
 				defer conn.Close()
+
+				// All workers share the limiter, so budget for this iteration's total
+				// payload plus a generous processing margin. Receive has no deadline;
+				// without this bound, one extra dropped datagram can hang the whole suite.
+				expected := time.Duration(int64(s.Size)*int64(s.Count)*int64(s.Parallel)) * time.Second / 1048576
+				timeout := max(10*time.Second, 4*expected+5*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+
+				var sent atomic.Int64
+				var received atomic.Int64
+				sendDone := make(chan error, 1)
+				receiveDone := make(chan error, 1)
 				go func() {
 					// Sending routine
 					for i := 0; i < s.Count; i++ {
-						_ = limiter.WaitN(context.Background(), len(sData))
-						_ = conn.Send(sData, s.ServerAddr)
+						if err := limiter.WaitN(ctx, len(sData)); err != nil {
+							sendDone <- fmt.Errorf("rate limit after %d/%d packets: %w", sent.Load(), s.Count, err)
+							return
+						}
+						if err := conn.Send(sData, s.ServerAddr); err != nil {
+							sendDone <- fmt.Errorf("send after %d/%d packets: %w", sent.Load(), s.Count, err)
+							return
+						}
+						sent.Add(1)
 					}
+					sendDone <- nil
 				}()
 
 				minCount := s.Count * 8 / 10 // Tolerate 20% packet loss
-				for i := 0; i < minCount; i++ {
-					rData, _, err := conn.Receive()
-					if err != nil {
-						errChan <- err
-						return
+				go func() {
+					for i := 0; i < minCount; i++ {
+						rData, _, err := conn.Receive()
+						if err != nil {
+							receiveDone <- err
+							return
+						}
+						if len(rData) != len(sData) {
+							receiveDone <- fmt.Errorf("incomplete data received: %d/%d bytes", len(rData), len(sData))
+							return
+						}
+						received.Add(1)
 					}
-					if len(rData) != len(sData) {
-						errChan <- fmt.Errorf("incomplete data received: %d/%d bytes", len(rData), len(sData))
+					receiveDone <- nil
+				}()
+
+				for sendDone != nil || receiveDone != nil {
+					select {
+					case err := <-sendDone:
+						sendDone = nil
+						if err != nil {
+							errChan <- err
+							return
+						}
+					case err := <-receiveDone:
+						receiveDone = nil
+						if err != nil {
+							errChan <- err
+							return
+						}
+					case <-ctx.Done():
+						errChan <- fmt.Errorf(
+							"UDP stress timed out after %s: sent %d/%d, received %d/%d: %w",
+							timeout, sent.Load(), s.Count, received.Load(), minCount, ctx.Err(),
+						)
 						return
 					}
 				}
 			}()
 		}
 		wg.Wait()
-
-		assert.Empty(t, errChan)
+		close(errChan)
+		for err := range errChan {
+			assert.NoError(t, err)
+		}
 	}
 }
 

@@ -2,12 +2,14 @@ package integration_tests
 
 import (
 	"io"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/apernet/hysteria/core/v2/client"
 	"github.com/apernet/hysteria/core/v2/errors"
@@ -214,7 +216,8 @@ func TestClientServerClientShutdown(t *testing.T) {
 func TestClientServerServerShutdown(t *testing.T) {
 	// Create server
 	udpConn, udpAddr, err := serverConn()
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = udpConn.Close() })
 	auth := mocks.NewMockAuthenticator(t)
 	auth.EXPECT().Authenticate(mock.Anything, mock.Anything, mock.Anything).Return(true, "nobody")
 	s, err := server.NewServer(&server.Config{
@@ -222,8 +225,10 @@ func TestClientServerServerShutdown(t *testing.T) {
 		Conn:          udpConn,
 		Authenticator: auth,
 	})
-	assert.NoError(t, err)
-	go s.Serve()
+	require.NoError(t, err)
+	defer s.Close()
+	serveErrCh := make(chan error, 1)
+	go func() { serveErrCh <- s.Serve() }()
 
 	// Create client
 	c, _, err := client.NewClient(&client.Config{
@@ -233,20 +238,47 @@ func TestClientServerServerShutdown(t *testing.T) {
 			MaxIdleTimeout: 4 * time.Second,
 		},
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	defer c.Close()
 
 	// Close the server - expect the client to return ClosedError for both TCP & UDP calls.
-	_ = s.Close()
+	closeStarted := time.Now()
+	require.NoError(t, s.Close())
+	require.Less(t, time.Since(closeStarted), 5*time.Second)
 
-	_, err = c.TCP("whatever")
-	_, ok := err.(errors.ClosedError)
-	assert.True(t, ok)
+	select {
+	case err = <-serveErrCh:
+		require.Error(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not return after Close")
+	}
 
-	time.Sleep(1 * time.Second) // Allow some time for the error to be propagated to the UDP session manager
+	// Transport.Close alone is abrupt and leaves the peer waiting for its idle
+	// timeout. A bounded call pins the production contract that server shutdown
+	// notifies established clients immediately.
+	tcpErrCh := make(chan error, 1)
+	go func() {
+		_, tcpErr := c.TCP("whatever")
+		tcpErrCh <- tcpErr
+	}()
+	select {
+	case err = <-tcpErrCh:
+		_, ok := err.(errors.ClosedError)
+		require.True(t, ok, "TCP error = %T: %v", err, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("client did not observe server shutdown")
+	}
 
-	_, err = c.UDP()
-	_, ok = err.(errors.ClosedError)
-	assert.True(t, ok)
+	require.Eventually(t, func() bool {
+		_, udpErr := c.UDP()
+		_, ok := udpErr.(errors.ClosedError)
+		return ok
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, c.Close())
 
-	assert.NoError(t, c.Close())
+	// Close is also the socket ownership barrier: the exact same address must be
+	// reusable immediately, without relying on a later idle timeout or GC.
+	rebound, err := net.ListenUDP("udp", udpAddr.(*net.UDPAddr))
+	require.NoError(t, err)
+	require.NoError(t, rebound.Close())
 }

@@ -98,4 +98,4 @@ replace github.com/apernet/hysteria/core/v2 => ../core
 
 replace github.com/apernet/hysteria/extras/v2 => ../extras
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-0.20260805064420-870c4d4ab48b
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.2

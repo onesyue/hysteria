@@ -95,9 +95,11 @@ func NewServer(config *Config) (Server, error) {
 		return nil, err
 	}
 	return &serverImpl{
-		config:   config,
-		tr:       tr,
-		listener: listener,
+		config:    config,
+		tr:        tr,
+		listener:  listener,
+		conns:     make(map[*quic.Conn]struct{}),
+		closeDone: make(chan struct{}),
 	}, nil
 }
 
@@ -105,24 +107,107 @@ type serverImpl struct {
 	config   *Config
 	tr       *quic.Transport
 	listener *quic.Listener
+
+	mutex     sync.Mutex
+	closing   bool
+	conns     map[*quic.Conn]struct{}
+	serveWG   sync.WaitGroup
+	handlerWG sync.WaitGroup
+
+	closeOnce sync.Once
+	closeDone chan struct{}
+	closeErr  error
 }
 
 func (s *serverImpl) Serve() error {
+	s.mutex.Lock()
+	if s.closing {
+		s.mutex.Unlock()
+		return quic.ErrServerClosed
+	}
+	s.serveWG.Add(1)
+	s.mutex.Unlock()
+	defer s.serveWG.Done()
+
 	for {
 		conn, err := s.listener.Accept(context.Background())
 		if err != nil {
 			return err
 		}
-		go s.handleClient(conn)
+
+		// Register accepted connections before publishing the handler goroutine.
+		// Close sets closing under the same lock and waits for Serve to return,
+		// so no connection can slip past the shutdown snapshot.
+		s.mutex.Lock()
+		if s.closing {
+			s.mutex.Unlock()
+			_ = conn.CloseWithError(closeErrCodeOK, "")
+			continue
+		}
+		s.conns[conn] = struct{}{}
+		s.handlerWG.Add(1)
+		s.mutex.Unlock()
+		go s.serveClient(conn)
 	}
 }
 
 func (s *serverImpl) Close() error {
-	err := errors.Join(s.listener.Close(), s.tr.Close(), s.config.Conn.Close())
-	if s.config.Cleanup != nil {
-		err = errors.Join(err, s.config.Cleanup.Close())
-	}
-	return err
+	s.closeOnce.Do(func() {
+		defer close(s.closeDone)
+
+		s.mutex.Lock()
+		s.closing = true
+		s.mutex.Unlock()
+
+		// Stop Accept first, then wait until every accepted connection has either
+		// been registered or closed by Serve. Listener.Close deliberately leaves
+		// established QUIC connections alive.
+		s.closeErr = s.listener.Close()
+		s.serveWG.Wait()
+
+		s.mutex.Lock()
+		conns := make([]*quic.Conn, 0, len(s.conns))
+		for conn := range s.conns {
+			conns = append(conns, conn)
+		}
+		s.mutex.Unlock()
+
+		// Transport.Close is intentionally abrupt and doesn't send CONNECTION_CLOSE.
+		// Close established connections first so peers learn about shutdown now,
+		// instead of waiting for their idle timeout. Do it concurrently so shutdown
+		// latency doesn't grow linearly with the number of clients.
+		connErrs := make([]error, len(conns))
+		var closeWG sync.WaitGroup
+		for i, conn := range conns {
+			closeWG.Add(1)
+			go func() {
+				defer closeWG.Done()
+				connErrs[i] = conn.CloseWithError(closeErrCodeOK, "")
+			}()
+		}
+		closeWG.Wait()
+		s.closeErr = errors.Join(s.closeErr, errors.Join(connErrs...))
+
+		// A returned Close is a lifecycle barrier: HTTP/3 handlers have observed
+		// connection closure before the UDP transport and cleanup resources go away.
+		s.handlerWG.Wait()
+		s.closeErr = errors.Join(s.closeErr, s.tr.Close(), s.config.Conn.Close())
+		if s.config.Cleanup != nil {
+			s.closeErr = errors.Join(s.closeErr, s.config.Cleanup.Close())
+		}
+	})
+	<-s.closeDone
+	return s.closeErr
+}
+
+func (s *serverImpl) serveClient(conn *quic.Conn) {
+	defer s.handlerWG.Done()
+	defer func() {
+		s.mutex.Lock()
+		delete(s.conns, conn)
+		s.mutex.Unlock()
+	}()
+	s.handleClient(conn)
 }
 
 func (s *serverImpl) handleClient(conn *quic.Conn) {
@@ -132,6 +217,10 @@ func (s *serverImpl) handleClient(conn *quic.Conn) {
 		StreamDispatcher: handler.ProxyStreamHijacker,
 	}
 	err := h3s.ServeQUICConn(conn)
+	// StreamDispatcher transfers ownership of proxy streams to h3sHandler, so
+	// http3.Server's own wait group can't account for them. Join those workers
+	// before publishing this connection as fully closed.
+	handler.backgroundWG.Wait()
 	authenticated, authID, untrack := handler.finish()
 	if untrack != nil {
 		untrack()
@@ -158,7 +247,7 @@ type h3sHandler struct {
 	untrack       func()
 	connID        uint32 // a random id for dump streams
 
-	udpSM *udpSessionManager // Only set after authentication
+	backgroundWG sync.WaitGroup
 }
 
 func (h *h3sHandler) finish() (authenticated bool, authID string, untrack func()) {
@@ -246,14 +335,15 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// We use sync.Once to make sure that only one goroutine is started,
 			// as ServeHTTP may be called by multiple goroutines simultaneously
 			if !h.config.DisableUDP {
+				h.backgroundWG.Add(1)
 				go func() {
+					defer h.backgroundWG.Done()
 					sm := newUDPSessionManager(
 						&udpIOImpl{h.conn, id, h.config.TrafficLogger, h.config.RequestHook, h.config.Outbound},
 						&udpEventLoggerImpl{h.conn, id, h.config.EventLogger},
 						h.config.UDPIdleTimeout,
 					)
-					h.udpSM = sm
-					go sm.Run()
+					_ = sm.Run()
 				}()
 			}
 		} else {
@@ -283,7 +373,11 @@ func (h *h3sHandler) ProxyStreamHijacker(ft http3.FrameType, stream *quic.Stream
 		}
 		// Wraps the stream with QStream, which handles Close() properly
 		qStream := &utils.QStream{Stream: stream}
-		go h.handleTCPRequest(qStream, authID)
+		h.backgroundWG.Add(1)
+		go func() {
+			defer h.backgroundWG.Done()
+			h.handleTCPRequest(qStream, authID)
+		}()
 		return true, nil
 	default:
 		return false, nil

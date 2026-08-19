@@ -11,7 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 ERRORS: list[str] = []
-QUIC_GO_COMMIT = "870c4d4ab48b1a9d8a1f9e2bc82f992b074a6ea1"
+QUIC_GO_VERSION = "v0.61.1-yue.2"
+QUIC_GO_COMMIT = "bb134e12b9b668a8ec54cef75fea8797c28d8fc7"
+QUIC_GO_MODULES = ("app", "core", "extras")
 
 
 def require(condition: bool, message: str) -> None:
@@ -19,7 +21,86 @@ def require(condition: bool, message: str) -> None:
         ERRORS.append(message)
 
 
+def quic_source_contract_errors(root: Path) -> list[str]:
+    """Return source-level workspace and fork-pin drift errors.
+
+    The checked-out commit used by CI is validated separately below.  Keeping
+    this parser pure makes deletion and split-pin regressions testable without
+    mutating the real checkout.
+    """
+
+    errors: list[str] = []
+    workspace_path = root / "go.work"
+    if not workspace_path.is_file():
+        errors.append("go.work: workspace source of truth is missing")
+    else:
+        workspace = workspace_path.read_text(encoding="utf-8")
+        workspace_uses = set(
+            re.findall(r"(?m)^\s*(\./(?:app|core|extras))\s*$", workspace)
+        )
+        expected_uses = {f"./{module}" for module in QUIC_GO_MODULES}
+        if workspace_uses != expected_uses:
+            errors.append(
+                "go.work: use block must contain exactly app, core, and extras"
+            )
+        expected_replace = (
+            "replace github.com/apernet/quic-go => "
+            f"github.com/onesyue/quic-go {QUIC_GO_VERSION}"
+        )
+        if re.search(rf"(?m)^{re.escape(expected_replace)}\s*$", workspace) is None:
+            errors.append(
+                f"go.work: quic-go workspace pin must be {QUIC_GO_VERSION}"
+            )
+    if not (root / "go.work.sum").is_file():
+        errors.append("go.work.sum: workspace checksum manifest is missing")
+
+    gitignore_path = root / ".gitignore"
+    if gitignore_path.is_file() and re.search(
+        r"(?m)^/?go\.work(?:\.sum)?/?$",
+        gitignore_path.read_text(encoding="utf-8"),
+    ):
+        errors.append(".gitignore: committed workspace files must not be ignored")
+
+    replace_re = re.compile(
+        r"(?m)^replace\s+github\.com/apernet/quic-go\s+=>\s+"
+        r"github\.com/onesyue/quic-go\s+(\S+)\s*$"
+    )
+    for module in QUIC_GO_MODULES:
+        go_mod_path = root / module / "go.mod"
+        if not go_mod_path.is_file():
+            errors.append(f"{module}/go.mod: module manifest is missing")
+            continue
+        pins = replace_re.findall(go_mod_path.read_text(encoding="utf-8"))
+        if pins != [QUIC_GO_VERSION]:
+            rendered = ", ".join(pins) if pins else "missing"
+            errors.append(
+                f"{module}/go.mod: quic-go fork pin is {rendered}; "
+                f"expected exactly {QUIC_GO_VERSION}"
+            )
+
+        go_sum_path = root / module / "go.sum"
+        if not go_sum_path.is_file():
+            errors.append(f"{module}/go.sum: checksum manifest is missing")
+            continue
+        go_sum = go_sum_path.read_text(encoding="utf-8")
+        if f"github.com/onesyue/quic-go {QUIC_GO_VERSION} h1:" not in go_sum:
+            errors.append(f"{module}/go.sum: {QUIC_GO_VERSION} checksum is missing")
+        if f"github.com/onesyue/quic-go {QUIC_GO_VERSION}/go.mod h1:" not in go_sum:
+            errors.append(
+                f"{module}/go.sum: {QUIC_GO_VERSION} go.mod checksum is missing"
+            )
+
+    return errors
+
+
+ERRORS.extend(quic_source_contract_errors(ROOT))
+
+
 test_workflow = (WORKFLOWS / "test.yml").read_text(encoding="utf-8")
+require(
+    "python3 -m unittest scripts.ci.test_check_supply_chain" in test_workflow,
+    "test.yml: supply-chain guard unit tests are not executed",
+)
 events_match = re.search(r"(?ms)^on:\n(?P<events>.*?)(?=^[^\s#])", test_workflow)
 require(events_match is not None, "test.yml: missing top-level on block")
 if events_match is not None:
