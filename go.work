@@ -1,0 +1,9 @@
+go 1.25.0
+
+use (
+	./app
+	./core
+	./extras
+)
+
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.2
