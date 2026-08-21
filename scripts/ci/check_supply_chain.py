@@ -14,6 +14,11 @@ ERRORS: list[str] = []
 QUIC_GO_VERSION = "v0.61.1-yue.2"
 QUIC_GO_COMMIT = "bb134e12b9b668a8ec54cef75fea8797c28d8fc7"
 QUIC_GO_MODULES = ("app", "core", "extras")
+GO_VERSION = "1.26.7"
+GO_BUILDER_IMAGE = (
+    "golang:1.26.7-alpine3.24@"
+    "sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -143,7 +148,10 @@ for workflow in sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml"))):
 
 for workflow_name in ("test.yml", "build-common.yml"):
     contents = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
-    require('go-version: "1.26.6"' in contents, f"{workflow_name}: Go 1.26.6 pin missing")
+    require(
+        f'go-version: "{GO_VERSION}"' in contents,
+        f"{workflow_name}: Go {GO_VERSION} pin missing",
+    )
     for dependency_path in ("core/go.sum", "extras/go.sum", "app/go.sum"):
         require(
             dependency_path in contents,
@@ -179,6 +187,10 @@ for workflow_name in ("release.yml", "master.yml", "experimental.yml"):
     )
 
 dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+require(
+    f"FROM {GO_BUILDER_IMAGE} AS builder" in dockerfile,
+    f"Dockerfile: Go {GO_VERSION} builder image or digest drifted",
+)
 for line_number, line in enumerate(dockerfile.splitlines(), 1):
     if line.startswith("FROM "):
         require(
