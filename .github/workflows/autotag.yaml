@@ -5,13 +5,14 @@ on:
     tags:
       - app/v*.*.*
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   tag:
     name: "Create tags"
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: "Extract tagbase"
         id: extract_tagbase
@@ -52,18 +53,24 @@ jobs:
             } catch (error) {
               core.info(`failed to create ref ${refname}: ${error}`);
             }
-            core.info(`updating ref ${refname}`)
+            // Release tags are immutable supply-chain identities. A retried
+            // app release may observe the exact tag already present; accept
+            // only that idempotent case and never move it to another commit.
             try {
-              await github.rest.git.updateRef({
+              const existing = await github.rest.git.getRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: refname,
-                sha: context.sha
+                ref: refname
               });
-              core.info(`updated ref ${refname}`);
-              return;
+              if (existing.data.object.sha === context.sha) {
+                core.info(`ref ${refname} already points to ${context.sha}`);
+                return;
+              }
+              core.setFailed(
+                `ref ${refname} is immutable and points to ${existing.data.object.sha}, not ${context.sha}`
+              );
             } catch (error) {
-              core.setFailed(`failed to update ref ${refname}: ${error}`);
+              core.setFailed(`failed to verify existing ref ${refname}: ${error}`);
             }
 
       - name: "Tagging extras/*"
@@ -89,16 +96,21 @@ jobs:
             } catch (error) {
               core.info(`failed to create ref ${refname}: ${error}`);
             }
-            core.info(`updating ref ${refname}`)
+            // Match core/*: an existing release tag is accepted only when it
+            // already names this exact commit. Never rewrite release history.
             try {
-              await github.rest.git.updateRef({
+              const existing = await github.rest.git.getRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: refname,
-                sha: context.sha
+                ref: refname
               });
-              core.info(`updated ref ${refname}`);
-              return;
+              if (existing.data.object.sha === context.sha) {
+                core.info(`ref ${refname} already points to ${context.sha}`);
+                return;
+              }
+              core.setFailed(
+                `ref ${refname} is immutable and points to ${existing.data.object.sha}, not ${context.sha}`
+              );
             } catch (error) {
-              core.setFailed(`failed to update ref ${refname}: ${error}`);
+              core.setFailed(`failed to verify existing ref ${refname}: ${error}`);
             }
