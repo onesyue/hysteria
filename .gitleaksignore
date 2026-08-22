@@ -1,0 +1,14 @@
+# Historical upstream documentation assets, protocol fixtures, example
+# passwords, and test-only private keys. No production credential is ignored;
+# every exception is pinned to an immutable commit, path, rule, and line.
+99692af4e532a6c6897789893979b7ffe69f25e8:README.md:generic-api-key:62
+99692af4e532a6c6897789893979b7ffe69f25e8:README.md:generic-api-key:63
+99692af4e532a6c6897789893979b7ffe69f25e8:README.md:generic-api-key:64
+589f4a82562b4b8e330f68bf38a8aec7dffd1a5a:README.md:generic-api-key:85
+4404b5c0d46cd9149ae86a47d80729dac6f94eff:app/cmd/client_test.yaml:generic-api-key:30
+4404b5c0d46cd9149ae86a47d80729dac6f94eff:app/cmd/server_test.yaml:generic-api-key:22
+4c24edaac14f50d3fa7da0a8262e36364e844b2f:extras/obfs/salamander.go:generic-api-key:15
+c1868d5c14eebea27f10b1365cfa8c64ab3c7080:extras/realm/client_test.go:generic-api-key:118
+9d361555ef929ec15e11e7b8894d78d283f30b00:install_server.sh:generic-api-key:684
+fcb8965987eac4dd7fadb2f6732b7b6894e9ee9e:app/internal/http/test.key:private-key:1
+9f54aade8fddd3bfdfe2a8b0071996e200440ac1:core/internal/integration_tests/test.key:private-key:1
