@@ -474,9 +474,22 @@ func (h *h3sHandler) masqHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// udpQUICConn is the slice of *quic.Conn the downstream UDP path actually uses.
+//
+// It exists so the accounting in SendMessage can be exercised by a test. That
+// is not academic: charging before the send double-billed every fragmented
+// downstream datagram for as long as native HY2 has run, and no test could
+// observe it while this field was a concrete *quic.Conn. *quic.Conn satisfies
+// this interface unchanged.
+type udpQUICConn interface {
+	SendDatagram(b []byte) error
+	ReceiveDatagram(ctx context.Context) ([]byte, error)
+	CloseWithError(code quic.ApplicationErrorCode, desc string) error
+}
+
 // udpIOImpl is the IO implementation for udpSessionManager with TrafficLogger support
 type udpIOImpl struct {
-	Conn          *quic.Conn
+	Conn          udpQUICConn
 	AuthID        string
 	TrafficLogger TrafficLogger
 	RequestHook   RequestHook
@@ -508,6 +521,33 @@ func (io *udpIOImpl) ReceiveMessage() (*protocol.UDPMessage, error) {
 }
 
 func (io *udpIOImpl) SendMessage(buf []byte, msg *protocol.UDPMessage) error {
+	// 🚨 Account AFTER the datagram is actually on the wire, never before.
+	//
+	// sendMessageAutoFrag sends the whole message first and, on
+	// quic.DatagramTooLargeError, re-sends it as fragments through this same
+	// method. Charging up-front therefore billed the payload twice for every
+	// downstream UDP packet above the datagram limit (MaxDatagramFrameSize
+	// 1200, so anything past ~1150 bytes): once for the attempt that could
+	// never succeed, then once more across the fragments. Measured
+	// payload=1400 -> billed 2800, exactly 2.00x. Video, games, DNS and
+	// QUIC-over-UDP all live above that threshold.
+	//
+	// The two early returns below are also non-sends and must not be charged:
+	// a serialize overflow is a silent drop, and a failed SendDatagram never
+	// left the host.
+	//
+	// Moving the call after the send means a user can overshoot their limit by
+	// at most one datagram before the disconnect lands. That is the correct
+	// trade: the alternative — the one being replaced — overstates real usage
+	// by 100% on an entire traffic class, and it overstates it permanently.
+	msgN := msg.Serialize(buf)
+	if msgN < 0 {
+		// Message larger than buffer, silent drop
+		return nil
+	}
+	if err := io.Conn.SendDatagram(buf[:msgN]); err != nil {
+		return err
+	}
 	if io.TrafficLogger != nil {
 		ok := io.TrafficLogger.LogTraffic(io.AuthID, 0, uint64(len(msg.Data)))
 		if !ok {
@@ -516,12 +556,7 @@ func (io *udpIOImpl) SendMessage(buf []byte, msg *protocol.UDPMessage) error {
 			return errDisconnect
 		}
 	}
-	msgN := msg.Serialize(buf)
-	if msgN < 0 {
-		// Message larger than buffer, silent drop
-		return nil
-	}
-	return io.Conn.SendDatagram(buf[:msgN])
+	return nil
 }
 
 func (io *udpIOImpl) Hook(data []byte, reqAddr *string) error {
