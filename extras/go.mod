@@ -50,4 +50,4 @@ require (
 
 replace github.com/apernet/hysteria/core/v2 => ../core
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.3
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.4
