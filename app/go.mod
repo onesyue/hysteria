@@ -81,7 +81,7 @@ require (
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/mod v0.37.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
@@ -94,4 +94,4 @@ replace github.com/apernet/hysteria/core/v2 => ../core
 
 replace github.com/apernet/hysteria/extras/v2 => ../extras
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.3
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.4
