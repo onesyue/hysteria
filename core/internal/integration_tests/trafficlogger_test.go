@@ -173,14 +173,43 @@ func TestClientServerTrafficLoggerUDP(t *testing.T) {
 	assert.Equal(t, rAddr, addr)
 	assert.Equal(t, "big mad", string(bs))
 
-	// Client reads from server again but blocked
+	// Client reads from server again but blocked.
+	//
+	// 🚨 This fork deliberately differs from upstream here. 7b06f47 moved the
+	// downstream UDP accounting to AFTER the datagram is on the wire, because
+	// charging before the send billed every fragmented datagram exactly twice
+	// (sendMessageAutoFrag re-enters SendMessage per fragment after
+	// quic.DatagramTooLargeError; measured payload=1400 -> billed 2800). Its
+	// documented price is that a user overshoots the limit by at most ONE
+	// datagram before the disconnect lands.
+	//
+	// So the upstream assertions — that this read returns io.EOF with nothing
+	// in it — encode the double-billing ordering, and have been red in this
+	// fork since 2026-08-25. Nobody saw it: check_supply_chain.py fails three
+	// steps earlier in the same workflow, so `go test` never ran.
+	//
+	// Whether that last datagram actually reaches the client is a RACE and
+	// must not be asserted either way: the server hands an unreliable QUIC
+	// datagram to the connection and then immediately closes it, and QUIC
+	// orders neither against the other. Measured 5 runs: 4 delivered, 1 lost.
+	// The invariant that does hold — and the one this test exists for — is
+	// that the block still takes effect. The billing half is covered
+	// deterministically by core/server/udp_accounting_yue_test.go.
 	trafficLogger.EXPECT().LogTraffic("nobody", uint64(0), uint64(4)).Return(false).Once()
 	trafficLogger.EXPECT().LogOnlineState("nobody", false).Return().Once()
 	sobConnCh <- []byte("nope")
-	bs, rAddr, err = conn.Receive()
-	assert.Equal(t, err, io.EOF)
-	assert.Empty(t, rAddr)
-	assert.Empty(t, bs)
+	// At most one datagram may still get through; the read after it must fail.
+	// Two reads is the exact bound: one for the in-flight overshoot, one to
+	// observe the teardown. A third would mean the block never landed.
+	for range 2 {
+		bs, rAddr, err = conn.Receive()
+		if err != nil {
+			break
+		}
+		assert.Equal(t, addr, rAddr)
+		assert.Equal(t, "nope", string(bs))
+	}
+	assert.Equal(t, io.EOF, err)
 
 	// The client should be disconnected
 	_, err = c.UDP()
