@@ -6,4 +6,4 @@ use (
 	./extras
 )
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.4
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.61.1-yue.5
