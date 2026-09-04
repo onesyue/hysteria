@@ -44,3 +44,17 @@ Release in this order:
 3. rerun source, format, supply-chain, race, and release builds;
 4. sign matching `core/v2.12.2-yue.1` and `extras/v2.12.2-yue.1` tags on the
    same Hysteria commit.
+
+## Installer script publication ownership
+
+The canonical upstream project owns the `hy2scripts` Cloudflare Pages project
+and publishes the inherited `scripts/install_server.sh`. This Yue fork does not
+own that Pages project and does not publish the `scripts/` directory. In
+particular, changes to `scripts/ci/` are fork CI changes, not installer releases.
+
+`.github/workflows/scripts.yml` therefore validates the inherited installer and
+redirect contract without deployment permissions or Cloudflare credentials. If
+publication ownership is deliberately transferred to this fork in the future,
+provision a project-scoped Cloudflare Pages API token and account ID as GitHub
+Actions secrets, then use Cloudflare's supported `wrangler-action`; do not
+restore the archived `pages-action` or its Wrangler 2 runtime.

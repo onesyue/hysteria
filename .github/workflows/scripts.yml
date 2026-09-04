@@ -1,29 +1,39 @@
-name: "Publish scripts"
+name: "Validate inherited scripts (no fork publish)"
 
 on:
   push:
     branches:
       - master
     paths:
-      - scripts/**
+      - scripts/install_server.sh
+      - scripts/_redirects
+      - .github/workflows/scripts.yml
+      - YUE_FORK.md
+  pull_request:
+    paths:
+      - scripts/install_server.sh
+      - scripts/_redirects
+      - .github/workflows/scripts.yml
+      - YUE_FORK.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  publish:
+  validate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
-    name: Publish scripts to Cloudflare Pages
+    timeout-minutes: 5
+    name: Validate scripts; Cloudflare publish is upstream-owned
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Publish to Cloudflare Pages
-        uses: cloudflare/pages-action@f0a1cd58cd66095dee69bfa18fa5efd1dde93bca # v1.5.0
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: hy2scripts
-          directory: scripts
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          persist-credentials: false
+
+      - name: Check installer syntax and redirect contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/install_server.sh
+          test "$(cat scripts/_redirects)" = "/ /install_server.sh 301"
