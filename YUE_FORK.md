@@ -30,21 +30,17 @@ changes supersede the equivalent older Yue commits and were not duplicated.
 
 ## quic-go dependency order
 
-The committed source remains pinned to the last published
-`github.com/onesyue/quic-go v0.61.1-yue.6`. The complete Hysteria 2.12.2 suite,
-including its TCP/UDP stress tests and the Yue receive/accounting tests, was
-also run with the local `codex/quic-v0.62-yue` tree that became
-`fc95ba2edd61fc8cfd9265d5f9c756f06d38919b` after reconnecting history.
+The committed source is pinned to the signed
+`github.com/onesyue/quic-go v0.62.0-yue.1` release at
+`fc95ba2edd61fc8cfd9265d5f9c756f06d38919b`. The complete Hysteria 2.12.2
+suite, including its TCP/UDP stress tests and the Yue receive/accounting tests,
+was run against that exact fork tree.
 
 Release in this order:
 
-1. sign and publish quic-go `v0.62.0-yue.1` at `fc95ba2e`;
-2. update the four version pins (`go.work` plus three `go.mod` files), regenerate
-   all three `go.sum` files, and update the version/commit constants in
-   `scripts/ci/check_supply_chain.py` together with the three workflow checkout
-   refs;
+1. publish quic-go `v0.62.0-yue.1` at `fc95ba2e` (complete);
+2. update all workspace/module pins, checksums, supply-chain constants, and CI
+   checkout refs to that immutable release (complete);
 3. rerun source, format, supply-chain, race, and release builds;
 4. sign matching `core/v2.12.2-yue.1` and `extras/v2.12.2-yue.1` tags on the
    same Hysteria commit.
-
-Do not fabricate module checksums before the private quic-go tag is reachable.
