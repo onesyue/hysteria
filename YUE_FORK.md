@@ -39,9 +39,10 @@ also run with the local `codex/quic-v0.62-yue` tree that became
 Release in this order:
 
 1. sign and publish quic-go `v0.62.0-yue.1` at `fc95ba2e`;
-2. update all eight Hysteria copies of the version/commit contract (`go.work`,
-   three `go.mod` files, three `go.sum` files, and
-   `scripts/ci/check_supply_chain.py` plus its workflow checkout refs);
+2. update the four version pins (`go.work` plus three `go.mod` files), regenerate
+   all three `go.sum` files, and update the version/commit constants in
+   `scripts/ci/check_supply_chain.py` together with the three workflow checkout
+   refs;
 3. rerun source, format, supply-chain, race, and release builds;
 4. sign matching `core/v2.12.2-yue.1` and `extras/v2.12.2-yue.1` tags on the
    same Hysteria commit.
