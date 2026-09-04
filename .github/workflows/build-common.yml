@@ -29,7 +29,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.7"
+          go-version: "1.26.8"
           cache-dependency-path: |
             core/go.sum
             extras/go.sum
@@ -54,20 +54,21 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          export HY_APP_PLATFORMS=$(sed 's/\r$//' platforms.txt | awk '!/^#/ && !/^$/' | paste -sd ",")
+          HY_APP_PLATFORMS=$(sed 's/\r$//' platforms.txt | awk '!/^#/ && !/^$/' | paste -sd ",")
+          export HY_APP_PLATFORMS
           uv run python hyperbole.py build -r
 
       - name: Generate hashes
         run: |
           for file in build/*; do
-            sha256sum $file >> build/hashes.txt
+            sha256sum "$file" >> build/hashes.txt
           done
 
       - name: List build files
         id: list-files
         run: |
-          files=$(ls -1 build/ | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "files=$files" >> $GITHUB_OUTPUT
+          files=$(find build -mindepth 1 -maxdepth 1 -type f -exec basename {} \; | sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
 
       - name: Upload build directory
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
