@@ -216,7 +216,7 @@ require(
 for module in ("app", "extras"):
     go_mod = (ROOT / module / "go.mod").read_text(encoding="utf-8")
     require("github.com/pion/dtls/v3 v3.1.4" in go_mod, f"{module}/go.mod: dtls v3.1.4 pin missing")
-    require("github.com/pion/stun/v3 v3.1.5" in go_mod, f"{module}/go.mod: stun v3.1.5 pin missing")
+    require("github.com/pion/stun/v3 v3.1.6" in go_mod, f"{module}/go.mod: stun v3.1.6 pin missing")
 
 if ERRORS:
     print("supply-chain contract failed:", file=sys.stderr)
