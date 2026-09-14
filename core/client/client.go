@@ -81,6 +81,9 @@ func (c *clientImpl) connect() (*HandshakeInfo, error) {
 		EncryptedClientHelloConfigList: c.config.TLSConfig.ECHConfigList,
 	}
 	quicConfig := &quic.Config{
+		// Start at the RFC 9000 minimum before probing larger datagrams.
+		// Obfuscation adds overhead outside QUIC, including on 1280-byte paths.
+		InitialPacketSize:              1200,
 		InitialStreamReceiveWindow:     c.config.QUICConfig.InitialStreamReceiveWindow,
 		MaxStreamReceiveWindow:         c.config.QUICConfig.MaxStreamReceiveWindow,
 		InitialConnectionReceiveWindow: c.config.QUICConfig.InitialConnectionReceiveWindow,

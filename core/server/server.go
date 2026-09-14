@@ -52,6 +52,9 @@ func NewServer(config *Config) (Server, error) {
 	}
 	tlsConfig := convertToStdTLSConfig(config)
 	quicConfig := &quic.Config{
+		// The first server flight must also fit the peer's minimum-sized path.
+		// Native PMTUD grows data packets only after connectivity is established.
+		InitialPacketSize:              1200,
 		InitialStreamReceiveWindow:     config.QUICConfig.InitialStreamReceiveWindow,
 		MaxStreamReceiveWindow:         config.QUICConfig.MaxStreamReceiveWindow,
 		InitialConnectionReceiveWindow: config.QUICConfig.InitialConnectionReceiveWindow,

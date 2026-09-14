@@ -28,22 +28,36 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    private dependency checkout, and signed nested-tag contracts remain fail
    closed.
 
+## Native Initial datagram correction (2026-09-14)
+
+Client and server start at the RFC 9000 1200-byte minimum, then retain native
+DF and PMTUD to discover larger data datagrams. A real 1280-byte relay path
+could not carry Chrome's 1250-byte Initial plus Salamander's 8-byte salt and
+IPv4/UDP headers (1286 bytes). The server's larger default first flight also
+failed. Allowing IP fragmentation in a diagnostic did not prove that the actual
+DF-marked QUIC connection worked.
+
+The pinned QUIC fork now respects a smaller explicitly requested Initial even
+with Chrome parroting. The Chrome TLS/QUIC parameters, zero-length connection ID
+and chaos protection stay enabled. Only the initial datagram budget changes.
+See https://www.rfc-editor.org/rfc/rfc9000.html#section-14.3 .
+
+The authenticated TCP echo regression uses real TLS, QUIC, Hysteria auth and
+streams through a bidirectional size-limited path, including both IPv4 and IPv6
+header budgets. The client-only candidate failed both paths with the old server;
+the complete core race suite passes with both sides corrected.
+
 ## quic-go dependency order
 
-The committed source is pinned to the signed
-`github.com/onesyue/quic-go v0.62.0-yue.1` release at
-`fc95ba2edd61fc8cfd9265d5f9c756f06d38919b`. The complete Hysteria 2.12.2
-suite, including its TCP/UDP stress tests and the Yue receive/accounting tests,
-was run against that exact fork tree.
+All three modules, the workspace and CI checkout refs use signed
+`github.com/onesyue/quic-go v0.62.0-yue.2` at
+`64f8901a4d53d1513003034dd7e1a9dbb0650a24`. This is the maintained private fork;
+CI uses its existing authenticated source checkout. Remote tag verification and
+authenticated native Go module download confirm the exact commit and checksums.
+No dependency is fetched from an uncommitted local replacement in the release.
 
-Release in this order:
-
-1. publish quic-go `v0.62.0-yue.1` at `fc95ba2e` (complete);
-2. update all workspace/module pins, checksums, supply-chain constants, and CI
-   checkout refs to that immutable release (complete);
-3. rerun source, format, supply-chain, race, and release builds;
-4. sign matching `core/v2.12.2-yue.1` and `extras/v2.12.2-yue.1` tags on the
-   same Hysteria commit.
+Matching `core/v2.12.2-yue.2` and `extras/v2.12.2-yue.2` tags identify this source
+and dependency closure; prior immutable tags remain available.
 
 ## Build toolchain baseline
 
