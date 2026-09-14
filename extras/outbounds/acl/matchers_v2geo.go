@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/apernet/hysteria/extras/v2/outbounds/acl/v2geo"
 )
@@ -115,7 +116,77 @@ type geositeMatcher struct {
 	Domains []geositeDomain
 	// Attributes are matched using "and" logic - if you have multiple attributes here,
 	// a domain must have all of those attributes to be considered a match.
+	// Fixed by newGeositeMatcher; the first Match folds it into the index, so
+	// it must not change afterwards.
 	Attrs []string
+
+	// Yue fork patch (2026-09-08): upstream Match is a linear scan over every entry of the
+	// category, for every connection. The fleet ACL references exactly one
+	// geosite category, category-ads-all, which carries 189,166 entries and is
+	// 100% Domain_RootDomain — so a connection to a non-ad host paid ~189k
+	// suffix comparisons before the rule could be declined. It was the largest
+	// single application-level function in the 2026-09-08 fleet CPU profile
+	// (2.27% cum / 1.37% flat merged over 16 live node profiles).
+	//
+	// full/root turn the exact and label-suffix classes into map lookups; only
+	// Plain (substring) and Regex entries, which no fleet category currently
+	// uses, keep the linear path. The attribute gate does not depend on the
+	// host, so it is applied once at build time — which is what makes the
+	// indexed result provably identical to the scan (see
+	// TestGeositeIndexMatchesLinearScan).
+	indexOnce sync.Once
+	full      map[string]struct{}
+	root      map[string]struct{}
+	residual  []geositeDomain
+}
+
+// attrsAllow is the host-independent half of matchDomain.
+func (m *geositeMatcher) attrsAllow(domain geositeDomain) bool {
+	if len(m.Attrs) == 0 {
+		return true
+	}
+	if len(domain.Attrs) == 0 {
+		return false
+	}
+	for _, attr := range m.Attrs {
+		if !domain.Attrs[attr] {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *geositeMatcher) buildIndex() {
+	var full, root map[string]struct{}
+	var residual []geositeDomain
+	for _, domain := range m.Domains {
+		if !m.attrsAllow(domain) {
+			continue
+		}
+		switch domain.Type {
+		case geositeDomainFull:
+			if full == nil {
+				full = make(map[string]struct{})
+			}
+			full[domain.Value] = struct{}{}
+		case geositeDomainRoot:
+			if root == nil {
+				root = make(map[string]struct{})
+			}
+			root[domain.Value] = struct{}{}
+		case geositeDomainPlain, geositeDomainRegex:
+			residual = append(residual, domain)
+		default:
+			// Unknown types match nothing (upstream matchDomain returns false),
+			// so dropping them here is what keeps the two paths equivalent.
+		}
+	}
+	m.full, m.root, m.residual = full, root, residual
+	// The index owns every entry it can answer for, and the map keys share the
+	// original strings. Releasing the slice keeps the patch close to memory
+	// neutral instead of holding both representations for the life of the
+	// process — this runs on 2 GiB nodes with a hard per-container mem_limit.
+	m.Domains = nil
 }
 
 func (m *geositeMatcher) matchDomain(domain geositeDomain, host HostInfo) bool {
@@ -155,7 +226,29 @@ func (m *geositeMatcher) matchDomain(domain geositeDomain, host HostInfo) bool {
 }
 
 func (m *geositeMatcher) Match(host HostInfo) bool {
-	for _, domain := range m.Domains {
+	m.indexOnce.Do(m.buildIndex)
+	if len(m.full) > 0 {
+		if _, ok := m.full[host.Name]; ok {
+			return true
+		}
+	}
+	if len(m.root) > 0 {
+		// Upstream root semantics: equal to the value, or the value preceded by
+		// a label boundary. Every such boundary is a '.' in host.Name, so
+		// probing each one covers exactly the same set of entries.
+		if _, ok := m.root[host.Name]; ok {
+			return true
+		}
+		for i := 0; i < len(host.Name); i++ {
+			if host.Name[i] != '.' {
+				continue
+			}
+			if _, ok := m.root[host.Name[i+1:]]; ok {
+				return true
+			}
+		}
+	}
+	for _, domain := range m.residual {
 		if m.matchDomain(domain, host) {
 			return true
 		}

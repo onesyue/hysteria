@@ -66,8 +66,6 @@ func Test_geoipMatcher_Match(t *testing.T) {
 func Test_geositeMatcher_Match(t *testing.T) {
 	geositeMap, err := v2geo.LoadGeoSite("v2geo/geosite.dat")
 	assert.NoError(t, err)
-	m, err := newGeositeMatcher(geositeMap["apple"], nil)
-	assert.NoError(t, err)
 
 	tests := []struct {
 		name  string
@@ -134,7 +132,12 @@ func Test_geositeMatcher_Match(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m.Attrs = tt.attrs
+			// Yue fork: the attribute gate is folded into the index that the
+			// first Match builds (see buildIndex), exactly as production fixes
+			// Attrs once in newGeositeMatcher. Build one matcher per case
+			// instead of mutating Attrs on a shared, already-indexed one.
+			m, err := newGeositeMatcher(geositeMap["apple"], tt.attrs)
+			assert.NoError(t, err)
 			assert.Equalf(t, tt.want, m.Match(tt.host), "Match(%v)", tt.host)
 		})
 	}

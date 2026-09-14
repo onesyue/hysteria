@@ -4,8 +4,9 @@
 
 - Canonical repository: `https://github.com/apernet/hysteria`
 - Canonical release: `app/v2.12.2`, `core/v2.12.2`, `extras/v2.12.2`
-- Exact base commit: `619a6f856b69fb7ee6a7a379e810e68b84004605`
-  (`feat: add quic.disableStatelessReset server option`)
+- Exact base commit: `62d1016707af21b91e5fb6070311d9f016ff2754`
+  (`fix: restrict port hopping redirects to local destinations`), merged on
+  2026-09-14 on top of the previous base `619a6f856b69fb7ee6a7a379e810e68b84004605`.
 
 The Yue branch retains the upstream 2.12 Mimic fixes, Unix-domain masquerade
 support, extra ACME providers, optional stateless-reset switch, and dual-stack
@@ -27,6 +28,27 @@ changes supersede the equivalent older Yue commits and were not duplicated.
 6. Graceful shutdown, mock lifecycle, build provenance, immutable action refs,
    private dependency checkout, and signed nested-tag contracts remain fail
    closed.
+7. The geosite ACL matcher answers from a lazily built full/root index instead
+   of a linear scan over the category; the attribute gate is folded into the
+   index at build time, and the index is differential-tested against an
+   independent transcription of upstream's scan
+   (`extras/outbounds/acl/matchers_v2geo_index_yue_test.go`).
+
+## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
+
+Merged upstream `master` through `62d1016` (five commits): the port hopping
+redirect scope fix (wildcard listeners no longer redirect outbound UDP to
+remote hosts, nftables and iptables), the rewritten TCP/UDP stress tests plus
+their harness (re-enabled in CI, `-timeout=5m`, replacing the earlier Yue
+bounding of the same tests), upstream's quic-go v0.62.0 bump (superseded by
+the Yue pin below, module files kept from the fork), and the HTTP proxy plain
+request body timeout fix.
+
+The geosite index that had lived only in yue-node's vendor tree since
+2026-09-08 now lives here. Measured on a 189,166-entry RootDomain category
+(the shape of `category-ads-all`): miss path 2,194,462 ns/op linear vs
+146 ns/op indexed, heap 22.0 MiB -> 12.7 MiB after the index releases the
+per-entry slice.
 
 ## Native Initial datagram correction (2026-09-14)
 
