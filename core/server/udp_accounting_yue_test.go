@@ -166,3 +166,85 @@ func TestExceedingTheLimitStillDisconnects(t *testing.T) {
 		t.Fatalf("expected the in-flight datagram to have been sent, got %d", len(conn.sent))
 	}
 }
+
+// sentAwareTrafficLogger implements SentTrafficLogger and records which
+// callback each byte arrived through.
+type sentAwareTrafficLogger struct {
+	preSend  uint64
+	postSend uint64
+	allow    bool
+}
+
+func (l *sentAwareTrafficLogger) LogTraffic(_ string, tx, rx uint64) bool {
+	l.preSend += tx + rx
+	return l.allow
+}
+
+func (l *sentAwareTrafficLogger) LogSentTraffic(_ string, tx, rx uint64) bool {
+	l.postSend += tx + rx
+	return l.allow
+}
+
+func (l *sentAwareTrafficLogger) LogOnlineState(string, bool)        {}
+func (l *sentAwareTrafficLogger) TraceStream(HyStream, *StreamStats) {}
+func (l *sentAwareTrafficLogger) UntraceStream(HyStream)             {}
+
+// A logger that can tell "already delivered" from "about to be forwarded" must
+// be told: downstream UDP is logged after the send, so it arrives through
+// LogSentTraffic, including on the refusal that disconnects the client.
+func TestDownstreamUDPReachesSentTrafficLoggerAfterTheSend(t *testing.T) {
+	for _, allow := range []bool{true, false} {
+		conn := &fakeUDPConn{maxDatagram: 1200}
+		logger := &sentAwareTrafficLogger{allow: allow}
+		io := &udpIOImpl{Conn: conn, AuthID: "u", TrafficLogger: logger}
+
+		err := sendMessageAutoFrag(io, make([]byte, 4096), msgOfSize(1400))
+		if allow && err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if !allow && !errors.Is(err, errDisconnect) {
+			t.Fatalf("refused send error = %v, want errDisconnect", err)
+		}
+		if logger.preSend != 0 {
+			t.Fatalf("allow=%v: %d delivered downstream bytes arrived through the pre-send LogTraffic", allow, logger.preSend)
+		}
+		if logger.postSend == 0 || len(conn.sent) == 0 {
+			t.Fatalf("allow=%v: postSend=%d sent=%d, want the delivered datagram reported via LogSentTraffic", allow, logger.postSend, len(conn.sent))
+		}
+	}
+}
+
+// Upstream UDP is logged before it is forwarded, so it must stay on LogTraffic:
+// a refusal there means the datagram is dropped.
+func TestUpstreamUDPStaysOnPreSendLogTraffic(t *testing.T) {
+	data := make([]byte, 64)
+	msg := msgOfSize(100)
+	n := msg.Serialize(data[:cap(data)])
+	if n < 0 {
+		data = make([]byte, 512)
+		n = msg.Serialize(data)
+	}
+	conn := &receiveOnceUDPConn{datagram: data[:n]}
+	logger := &sentAwareTrafficLogger{allow: false}
+	io := &udpIOImpl{Conn: conn, AuthID: "u", TrafficLogger: logger}
+	if _, err := io.ReceiveMessage(); !errors.Is(err, errDisconnect) {
+		t.Fatalf("refused upstream receive error = %v, want errDisconnect", err)
+	}
+	if logger.preSend != 100 || logger.postSend != 0 {
+		t.Fatalf("upstream bytes preSend=%d postSend=%d, want 100/0", logger.preSend, logger.postSend)
+	}
+}
+
+type receiveOnceUDPConn struct {
+	fakeUDPConn
+	datagram []byte
+}
+
+func (c *receiveOnceUDPConn) ReceiveDatagram(context.Context) ([]byte, error) {
+	if c.datagram == nil {
+		return nil, errors.New("drained")
+	}
+	d := c.datagram
+	c.datagram = nil
+	return d, nil
+}

@@ -266,6 +266,22 @@ type TrafficLogger interface {
 	UntraceStream(stream HyStream)
 }
 
+// SentTrafficLogger is an optional extension for traffic loggers that meter
+// and limit in the same callback. Plain LogTraffic is called BEFORE the bytes
+// are forwarded (TCP both directions, UDP upstream), so when it returns false
+// those bytes are dropped and never reach their destination. Downstream UDP is
+// the one exception: it is logged AFTER SendDatagram succeeded (see
+// udpIOImpl.SendMessage), so its bytes are already gone whatever the answer.
+//
+// A logger that implements this receives that post-send case here instead, and
+// can therefore charge a refused LogTraffic call nothing (the bytes were
+// dropped) while still charging every byte passed to LogSentTraffic (they were
+// delivered). Without it the two cases are indistinguishable, and a limiter
+// must either overcharge one refused chunk or leak one delivered datagram.
+type SentTrafficLogger interface {
+	LogSentTraffic(id string, tx, rx uint64) (ok bool)
+}
+
 // ConnectionTracker is an optional extension for traffic loggers that need
 // eager user-scoped disconnects. Registration happens after Authenticate and
 // before the successful response is published, closing the stale-credential

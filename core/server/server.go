@@ -561,7 +561,14 @@ func (io *udpIOImpl) SendMessage(buf []byte, msg *protocol.UDPMessage) error {
 		return err
 	}
 	if io.TrafficLogger != nil {
-		ok := io.TrafficLogger.LogTraffic(io.AuthID, 0, uint64(len(msg.Data)))
+		var ok bool
+		// The datagram is already on the wire: tell a logger that can tell the
+		// difference, so a refusal here still charges these bytes.
+		if sent, isSent := io.TrafficLogger.(SentTrafficLogger); isSent {
+			ok = sent.LogSentTraffic(io.AuthID, 0, uint64(len(msg.Data)))
+		} else {
+			ok = io.TrafficLogger.LogTraffic(io.AuthID, 0, uint64(len(msg.Data)))
+		}
 		if !ok {
 			// TrafficLogger requested to disconnect the client
 			_ = io.Conn.CloseWithError(closeErrCodeTrafficLimitReached, "")
