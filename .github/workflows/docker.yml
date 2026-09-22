@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: onesyue/quic-go
-          ref: 64f8901a4d53d1513003034dd7e1a9dbb0650a24
+          ref: 2ea05b4b6cc0f7a9e6aabfdfd5fa4fbdae2c1078
           path: .ci/quic-go
           ssh-key: ${{ secrets.QUIC_GO_DEPLOY_KEY }}
           persist-credentials: false

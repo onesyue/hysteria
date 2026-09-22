@@ -3,10 +3,11 @@
 ## Baseline
 
 - Canonical repository: `https://github.com/apernet/hysteria`
-- Canonical release: `app/v2.12.2`, `core/v2.12.2`, `extras/v2.12.2`
-- Exact base commit: `62d1016707af21b91e5fb6070311d9f016ff2754`
-  (`fix: restrict port hopping redirects to local destinations`), merged on
-  2026-09-14 on top of the previous base `619a6f856b69fb7ee6a7a379e810e68b84004605`.
+- Canonical release: `app/v2.12.3`, `core/v2.12.3`, `extras/v2.12.3`
+- Exact base commit: `e1366b173ccf5706e1e4630fe8aa654a4b574085`
+  (`feat: add ECH key generation command`), merged on 2026-09-22. Previous
+  bases: `62d1016707af21b91e5fb6070311d9f016ff2754` (2026-09-14),
+  `619a6f856b69fb7ee6a7a379e810e68b84004605`.
 
 The Yue branch retains the upstream 2.12 Mimic fixes, Unix-domain masquerade
 support, extra ACME providers, optional stateless-reset switch, and dual-stack
@@ -72,13 +73,13 @@ the complete core race suite passes with both sides corrected.
 ## quic-go dependency order
 
 All three modules, the workspace and CI checkout refs use signed
-`github.com/onesyue/quic-go v0.62.0-yue.2` at
-`64f8901a4d53d1513003034dd7e1a9dbb0650a24`. This is the maintained private fork;
+`github.com/onesyue/quic-go v0.62.0-yue.6` at
+`2ea05b4b6cc0f7a9e6aabfdfd5fa4fbdae2c1078`. This is the maintained private fork;
 CI uses its existing authenticated source checkout. Remote tag verification and
 authenticated native Go module download confirm the exact commit and checksums.
 No dependency is fetched from an uncommitted local replacement in the release.
 
-Matching `core/v2.12.2-yue.2` and `extras/v2.12.2-yue.2` tags identify this source
+Matching `core/v2.12.3-yue.1` and `extras/v2.12.3-yue.1` tags identify this source
 and dependency closure; prior immutable tags remain available.
 
 ## Build toolchain baseline
@@ -103,3 +104,17 @@ publication ownership is deliberately transferred to this fork in the future,
 provision a project-scoped Cloudflare Pages API token and account ID as GitHub
 Actions secrets, then use Cloudflare's supported `wrangler-action`; do not
 restore the archived `pages-action` or its Wrangler 2 runtime.
+
+## Complete dependency adoption (2026-09-22)
+
+The embedding yue-node already overrode QUIC to yue.6, but the standalone
+Hysteria modules, workspace and three CI source checkouts still consumed
+yue.2. All eight projections now select yue.6, taking HTTP/3 request hardening,
+read-batch ownership, congestion-size race fixes and bounded transient-read
+backoff into standalone builds too. The v2.12.3 upstream merge adds only the
+ECH key-generation tool and tests; the proxy-path fixes were already adopted
+in the earlier merge. See https://github.com/HyNetworks/hysteria/releases/tag/app/v2.12.3 .
+
+The optional SentTrafficLogger from 91c22e5 remains: admitted pre-send bytes
+and successfully queued downstream datagrams have distinct callbacks, so a
+limiter can avoid billing refused chunks without losing delivered datagrams.
