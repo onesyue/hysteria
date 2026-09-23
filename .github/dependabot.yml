@@ -4,11 +4,20 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    # 供应链冷却：新版本发布满 3 天才开 PR，给被投毒版本留出下架窗口（安全更新不受此限）。
+    cooldown:
+      default-days: 3
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+    # 供应链冷却：Actions 以可重指的 tag 分发，冷却更长（安全更新不受此限）。
+    cooldown:
+      default-days: 7
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "daily"
+    # 供应链冷却：新版本发布满 3 天才开 PR，给被投毒版本留出下架窗口（安全更新不受此限）。
+    cooldown:
+      default-days: 3
