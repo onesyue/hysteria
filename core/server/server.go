@@ -396,7 +396,10 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream, authID string) {
 	}
 	streamStats.State.Store(StreamStateInitial)
 	streamStats.LastActiveTime.Store(time.Now())
-	if trafficLogger != nil {
+	// A logger that opted out of stream statistics (yue fork) is neither told
+	// about the stream nor charged the per-chunk upkeep; LogTraffic still runs.
+	traceStats := wantsStreamStats(trafficLogger)
+	if traceStats {
 		trafficLogger.TraceStream(stream, streamStats)
 		defer trafficLogger.UntraceStream(stream)
 	}
@@ -460,7 +463,11 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream, authID string) {
 	}
 	// Start proxying
 	if trafficLogger != nil {
-		err = copyTwoWayEx(authID, stream, tConn, trafficLogger, streamStats)
+		chunkStats := streamStats
+		if !traceStats {
+			chunkStats = nil
+		}
+		err = copyTwoWayEx(authID, stream, tConn, trafficLogger, chunkStats)
 	} else {
 		// Use the fast path if no traffic logger is set
 		err = copyTwoWay(stream, tConn)

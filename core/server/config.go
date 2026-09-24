@@ -282,6 +282,34 @@ type SentTrafficLogger interface {
 	LogSentTraffic(id string, tx, rx uint64) (ok bool)
 }
 
+// StreamStatsOptOut is an optional extension for traffic loggers whose
+// TraceStream/UntraceStream are no-ops. When WantsStreamStats returns false the
+// server skips those two calls and, more importantly, the per-chunk StreamStats
+// upkeep in copyTwoWayEx: a time.Now plus a LastActiveTime store that boxes a
+// time.Time into an atomic.Value, i.e. one heap allocation per read in each
+// direction. LogTraffic is still called for every chunk exactly as before, so
+// metering, rate limiting and the disconnect decision are unchanged. The
+// per-stream StreamStats value itself is still maintained at stream-level
+// granularity (state, request address, hook put-back bytes).
+//
+// A logger that does not implement this interface keeps the upstream
+// behaviour byte for byte.
+type StreamStatsOptOut interface {
+	WantsStreamStats() bool
+}
+
+// wantsStreamStats reports whether per-chunk stream statistics must be kept
+// for this logger.
+func wantsStreamStats(l TrafficLogger) bool {
+	if l == nil {
+		return false
+	}
+	if o, ok := l.(StreamStatsOptOut); ok {
+		return o.WantsStreamStats()
+	}
+	return true
+}
+
 // ConnectionTracker is an optional extension for traffic loggers that need
 // eager user-scoped disconnects. Registration happens after Authenticate and
 // before the successful response is published, closing the stale-credential

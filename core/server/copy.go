@@ -69,8 +69,23 @@ func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error 
 	}
 }
 
+// copyTwoWayEx proxies with per-chunk traffic logging. stats may be nil, in
+// which case only LogTraffic runs per chunk (see StreamStatsOptOut).
 func copyTwoWayEx(id string, serverRw, remoteRw io.ReadWriter, l TrafficLogger, stats *StreamStats) error {
 	errChan := make(chan error, 2)
+	if stats == nil {
+		go func() {
+			errChan <- copyBufferLog(serverRw, remoteRw, func(n uint64) bool {
+				return l.LogTraffic(id, 0, n)
+			})
+		}()
+		go func() {
+			errChan <- copyBufferLog(remoteRw, serverRw, func(n uint64) bool {
+				return l.LogTraffic(id, n, 0)
+			})
+		}()
+		return <-errChan
+	}
 	go func() {
 		errChan <- copyBufferLog(serverRw, remoteRw, func(n uint64) bool {
 			stats.LastActiveTime.Store(time.Now())
