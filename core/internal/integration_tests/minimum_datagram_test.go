@@ -2,6 +2,7 @@ package integration_tests
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -86,6 +87,39 @@ func TestClientServerMinimumDatagram(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, <-sent)
 			require.Equal(t, payload, received)
+			// A successful stream says nothing about UDP. Use a controlled echo
+			// destination, preserve a sequence number, and include a 1200-byte
+			// application payload which needs HY2 fragmentation on this path.
+			udpEcho, err := net.ListenPacket("udp4", "127.0.0.1:0")
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = udpEcho.Close() })
+			go func() { _ = (&udpEchoServer{Conn: udpEcho}).Serve() }()
+			udp, err := c.UDP()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = udp.Close() })
+			for sequence, size := range []int{64, 256, 512, 1000, 1200} {
+				data := bytes.Repeat([]byte{byte(size)}, size)
+				binary.BigEndian.PutUint32(data, uint32(sequence+1))
+				require.NoError(t, udp.Send(data, udpEcho.LocalAddr().String()))
+				type reply struct {
+					data []byte
+					addr string
+					err  error
+				}
+				result := make(chan reply, 1)
+				go func() {
+					b, addr, err := udp.Receive()
+					result <- reply{b, addr, err}
+				}()
+				select {
+				case got := <-result:
+					require.NoError(t, got.err)
+					require.Equal(t, udpEcho.LocalAddr().String(), got.addr)
+					require.Equal(t, data, got.data, "UDP sequence=%d size=%d", sequence+1, size)
+				case <-time.After(3 * time.Second):
+					t.Fatalf("UDP sequence=%d size=%d: no first reply on the minimum-MTU path", sequence+1, size)
+				}
+			}
 			t.Logf("authenticated bytes=%d client_oversize_probes=%d server_oversize_probes=%d", len(payload), clientWire.dropped.Load(), serverWire.dropped.Load())
 		})
 	}
