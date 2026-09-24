@@ -246,6 +246,15 @@ type udpSessionManager struct {
 
 	mutex sync.RWMutex
 	m     map[uint32]*udpSessionEntry
+
+	// The idle cleanup loop runs only while at least one session exists (yue
+	// fork). Every authenticated HY2 connection owns a manager, and most of
+	// them never carry UDP, so an always-on 1 s ticker per connection was pure
+	// scheduler/timer upkeep. Both fields are guarded by mutex, which is also
+	// what inserts into and deletes from m, so "last session gone -> loop
+	// exits" and "first session added -> loop starts" cannot interleave badly.
+	stopCh         chan struct{} // set by Run; nil until then
+	cleanupRunning bool
 }
 
 func newUDPSessionManager(io udpIO, eventLogger udpEventLogger, idleTimeout time.Duration) *udpSessionManager {
@@ -261,7 +270,9 @@ func newUDPSessionManager(io udpIO, eventLogger udpEventLogger, idleTimeout time
 // Exit and returns error when the underlying io returns error (e.g. closed).
 func (m *udpSessionManager) Run() error {
 	stopCh := make(chan struct{})
-	go m.idleCleanupLoop(stopCh)
+	m.mutex.Lock()
+	m.stopCh = stopCh
+	m.mutex.Unlock()
 	defer close(stopCh)
 	defer m.cleanup(false)
 
@@ -274,6 +285,16 @@ func (m *udpSessionManager) Run() error {
 	}
 }
 
+// startIdleCleanupLocked starts the idle cleanup loop if it is not running.
+// The caller holds m.mutex for writing.
+func (m *udpSessionManager) startIdleCleanupLocked() {
+	if m.cleanupRunning || m.stopCh == nil {
+		return
+	}
+	m.cleanupRunning = true
+	go m.idleCleanupLoop(m.stopCh)
+}
+
 func (m *udpSessionManager) idleCleanupLoop(stopCh <-chan struct{}) {
 	ticker := time.NewTicker(idleCleanupInterval)
 	defer ticker.Stop()
@@ -281,10 +302,29 @@ func (m *udpSessionManager) idleCleanupLoop(stopCh <-chan struct{}) {
 		select {
 		case <-ticker.C:
 			m.cleanup(true)
+			// Exit once no session is left; the next new session restarts
+			// the loop under the same lock (see startIdleCleanupLocked).
+			m.mutex.Lock()
+			if len(m.m) == 0 {
+				m.cleanupRunning = false
+				m.mutex.Unlock()
+				return
+			}
+			m.mutex.Unlock()
 		case <-stopCh:
+			m.mutex.Lock()
+			m.cleanupRunning = false
+			m.mutex.Unlock()
 			return
 		}
 	}
+}
+
+// idleCleanupActive reports whether the idle cleanup loop is running.
+func (m *udpSessionManager) idleCleanupActive() bool {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.cleanupRunning
 }
 
 func (m *udpSessionManager) cleanup(idleOnly bool) {
@@ -341,6 +381,7 @@ func (m *udpSessionManager) feed(msg *protocol.UDPMessage) {
 		// Insert the session into the map
 		m.mutex.Lock()
 		m.m[msg.SessionID] = entry
+		m.startIdleCleanupLocked()
 		m.mutex.Unlock()
 	}
 
