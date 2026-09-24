@@ -34,6 +34,18 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    index at build time, and the index is differential-tested against an
    independent transcription of upstream's scan
    (`extras/outbounds/acl/matchers_v2geo_index_yue_test.go`).
+8. A traffic logger that implements `StreamStatsOptOut` and answers `false`
+   is not handed `TraceStream`/`UntraceStream`, and the TCP copy loop skips the
+   per-chunk `StreamStats` upkeep (a clock read plus a boxed `atomic.Value`
+   store, one heap allocation per read and direction). `LogTraffic` still runs
+   for every chunk, so metering, limits and disconnects are unchanged. Loggers
+   without the extension keep upstream behaviour
+   (`core/server/copy_stats_optout_yue_test.go`).
+9. The UDP session manager's 1 s idle-cleanup loop runs only while the
+   connection has at least one UDP session: it starts with the first session
+   and exits after the last one expires, under the same lock that inserts and
+   deletes sessions. A connection that never carries UDP owns no ticker
+   (`core/server/udp_idle_cleanup_yue_test.go`).
 
 ## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
 
