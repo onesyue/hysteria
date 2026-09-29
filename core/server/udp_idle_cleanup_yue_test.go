@@ -62,6 +62,7 @@ func (e *idleTestEvents) Close(uint32, error) {
 	e.closed++
 	e.mu.Unlock()
 }
+
 func (e *idleTestEvents) closedCount() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
