@@ -59,6 +59,7 @@ func TestECHCommandHysteriaIntegration(t *testing.T) {
 			}
 			s, err := server.NewServer(sc)
 			require.NoError(t, err)
+			configureECHTestServer(sc)
 			t.Cleanup(func() { _ = s.Close() })
 			go s.Serve()
 
@@ -66,6 +67,7 @@ func TestECHCommandHysteriaIntegration(t *testing.T) {
 				// Cover inline base64, PEM file input, and normal clients without ECH.
 				for _, input := range []string{base64.StdEncoding.EncodeToString(list), path, ""} {
 					cc := &client.Config{ServerAddr: packetConn.LocalAddr(), Auth: "test-password", QUICConfig: client.QUICConfig{DisableChromeParrot: disableParrot}}
+					configureECHTestClient(cc)
 					config := clientConfig{TLS: clientConfigTLS{SNI: "inner.example.com", CA: certFile, ECH: input}}
 					require.NoError(t, config.fillTLSConfig(cc))
 					outerName.Store("")
@@ -90,6 +92,7 @@ func TestECHCommandHysteriaIntegration(t *testing.T) {
 				_, wrongList, err := utils.GenerateECHKeys(utils.ECHKeyOptions{PublicName: "public.example.com"})
 				require.NoError(t, err)
 				cc := &client.Config{ServerAddr: packetConn.LocalAddr(), Auth: "test-password", QUICConfig: client.QUICConfig{DisableChromeParrot: disableParrot}}
+				configureECHTestClient(cc)
 				config := clientConfig{TLS: clientConfigTLS{
 					SNI: "inner.example.com", CA: certFile, ECH: base64.StdEncoding.EncodeToString(wrongList),
 				}}
