@@ -80,6 +80,7 @@ func TestECHCommandHysteriaIntegration(t *testing.T) {
 					if disableParrot {
 						require.Equal(t, input != "", info.ECHAccepted)
 					}
+					t.Logf("proxy traffic: disableParrot=%v, ECH input=%q", disableParrot, input)
 					assertECHProxyTraffic(t, c)
 					require.NoError(t, c.Close())
 				}
@@ -137,12 +138,19 @@ func assertECHProxyTraffic(t *testing.T, c client.Client) {
 	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer udp.Close()
+	var echoReceived, echoSent atomic.Int32
 	go func() {
 		_ = udp.SetDeadline(time.Now().Add(5 * time.Second))
 		buf := make([]byte, 1024)
-		n, addr, err := udp.ReadFrom(buf)
-		if err == nil {
-			_, _ = udp.WriteTo(buf[:n], addr)
+		for {
+			n, addr, err := udp.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			echoReceived.Add(1)
+			if _, err := udp.WriteTo(buf[:n], addr); err == nil {
+				echoSent.Add(1)
+			}
 		}
 	}()
 	u, err := c.UDP()
@@ -158,11 +166,23 @@ func assertECHProxyTraffic(t *testing.T, c client.Client) {
 		data, _, err := u.Receive()
 		ch <- result{data, err}
 	}()
-	select {
-	case r := <-ch:
-		require.NoError(t, r.err)
-		require.Equal(t, "ECH UDP", string(r.data))
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for proxied UDP response")
+	// QUIC DATAGRAM and the destination UDP socket are unreliable. This checks
+	// ECH proxy reachability, so resend within the same bounded response window.
+	// A broken UDP path still fails instead of relying on one datagram surviving.
+	retry := time.NewTicker(100 * time.Millisecond)
+	defer retry.Stop()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case r := <-ch:
+			require.NoError(t, r.err)
+			require.Equal(t, "ECH UDP", string(r.data))
+			return
+		case <-retry.C:
+			require.NoError(t, u.Send([]byte("ECH UDP"), udp.LocalAddr().String()))
+		case <-deadline.C:
+			t.Fatalf("timed out waiting for proxied UDP response (echo received=%d, sent=%d)", echoReceived.Load(), echoSent.Load())
+		}
 	}
 }
