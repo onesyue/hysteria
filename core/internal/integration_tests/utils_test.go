@@ -26,12 +26,14 @@ func serverTLSConfig() server.TLSConfig {
 }
 
 func serverConn() (net.PacketConn, net.Addr, error) {
-	udpAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 14514}
+	// Independent listeners also isolate concurrent package runs in separate
+	// worktrees, and avoid reusing a previous test's QUIC endpoint.
+	udpAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
 		return nil, nil, err
 	}
-	return udpConn, udpAddr, nil
+	return udpConn, udpConn.LocalAddr(), nil
 }
 
 // tcpEchoServer is a TCP server that echoes what it reads from the connection.
