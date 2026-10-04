@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"io"
 	"sync"
@@ -86,9 +87,9 @@ func copyBufferCheck(dst io.Writer, src io.Reader, check func(n uint64) error) e
 
 // copyTwoWayEx proxies with per-chunk traffic logging. stats may be nil, in
 // which case only LogTraffic runs per chunk (see StreamStatsOptOut).
-func copyTwoWayEx(id string, serverRw, remoteRw io.ReadWriter, l TrafficLogger, stats *StreamStats) error {
+func copyTwoWayEx(ctx context.Context, id string, serverRw, remoteRw io.ReadWriter, l TrafficLogger, stats *StreamStats) error {
 	if vl, ok := l.(TrafficVerdictLogger); ok {
-		return copyTwoWayVerdict(id, serverRw, remoteRw, vl, stats)
+		return copyTwoWayVerdict(ctx, id, serverRw, remoteRw, vl, stats)
 	}
 	errChan := make(chan error, 2)
 	if stats == nil {
@@ -137,7 +138,19 @@ func streamVerdictError(v TrafficVerdict) error {
 // copyTwoWayVerdict is copyTwoWayEx for a TrafficVerdictLogger (yue fork):
 // TrafficReject ends only this stream (errStreamRejected), TrafficDisconnect
 // the connection (errDisconnect). stats may be nil as in copyTwoWayEx.
-func copyTwoWayVerdict(id string, serverRw, remoteRw io.ReadWriter, l TrafficVerdictLogger, stats *StreamStats) error {
+func copyTwoWayVerdict(ctx context.Context, id string, serverRw, remoteRw io.ReadWriter, l TrafficVerdictLogger, stats *StreamStats) error {
+	logTraffic := l.LogStreamTraffic
+	if contextual, ok := l.(ContextTrafficVerdictLogger); ok {
+		// The first completed copy causes its caller to close both transports.
+		// Cancel the other direction's limiter wait at that same boundary,
+		// including when only one peer closed and the QUIC connection survives.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		logTraffic = func(id string, tx, rx uint64) TrafficVerdict {
+			return contextual.LogStreamTrafficContext(ctx, id, tx, rx)
+		}
+	}
 	errChan := make(chan error, 2)
 	go func() {
 		errChan <- copyBufferCheck(serverRw, remoteRw, func(n uint64) error {
@@ -145,7 +158,7 @@ func copyTwoWayVerdict(id string, serverRw, remoteRw io.ReadWriter, l TrafficVer
 				stats.LastActiveTime.Store(time.Now())
 				stats.Rx.Add(n)
 			}
-			return streamVerdictError(l.LogStreamTraffic(id, 0, n))
+			return streamVerdictError(logTraffic(id, 0, n))
 		})
 	}()
 	go func() {
@@ -154,7 +167,7 @@ func copyTwoWayVerdict(id string, serverRw, remoteRw io.ReadWriter, l TrafficVer
 				stats.LastActiveTime.Store(time.Now())
 				stats.Tx.Add(n)
 			}
-			return streamVerdictError(l.LogStreamTraffic(id, n, 0))
+			return streamVerdictError(logTraffic(id, n, 0))
 		})
 	}()
 	// Block until one of the two goroutines returns

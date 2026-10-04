@@ -375,7 +375,7 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					defer h.backgroundWG.Done()
 					sm := newUDPSessionManager(
-						&udpIOImpl{h.conn, id, h.config.TrafficLogger, h.config.RequestHook, h.config.Outbound},
+						&udpIOImpl{Conn: h.conn, AuthID: id, TrafficLogger: h.config.TrafficLogger, RequestHook: h.config.RequestHook, Outbound: h.config.Outbound, Context: h.conn.Context()},
 						&udpEventLoggerImpl{h.conn, id, h.config.EventLogger},
 						h.config.UDPIdleTimeout,
 					)
@@ -500,7 +500,7 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream, authID string) {
 		if !traceStats {
 			chunkStats = nil
 		}
-		err = copyTwoWayEx(authID, stream, tConn, trafficLogger, chunkStats)
+		err = copyTwoWayEx(stream.Context(), authID, stream, tConn, trafficLogger, chunkStats)
 	} else {
 		// Use the fast path if no traffic logger is set
 		err = copyTwoWay(stream, tConn)
@@ -541,6 +541,7 @@ type udpQUICConn interface {
 
 // udpIOImpl is the IO implementation for udpSessionManager with TrafficLogger support
 type udpIOImpl struct {
+	Context       context.Context
 	Conn          udpQUICConn
 	AuthID        string
 	TrafficLogger TrafficLogger
@@ -618,7 +619,17 @@ func (io *udpIOImpl) SendMessage(buf []byte, msg *protocol.UDPMessage) error {
 		if vl, isVerdict := io.TrafficLogger.(TrafficVerdictLogger); isVerdict {
 			// Already sent: a rejection has nothing left to refuse, so only a
 			// disconnect verdict changes anything (yue fork).
-			if vl.LogSentDatagramTraffic(io.AuthID, 0, uint64(len(msg.Data))) == TrafficDisconnect {
+			verdict := TrafficAccept
+			if contextual, ok := vl.(ContextTrafficVerdictLogger); ok {
+				ctx := io.Context
+				if ctx == nil {
+					ctx = context.Background()
+				}
+				verdict = contextual.LogSentDatagramTrafficContext(ctx, io.AuthID, 0, uint64(len(msg.Data)))
+			} else {
+				verdict = vl.LogSentDatagramTraffic(io.AuthID, 0, uint64(len(msg.Data)))
+			}
+			if verdict == TrafficDisconnect {
 				_ = io.Conn.CloseWithError(closeErrCodeTrafficLimitReached, "")
 				return errDisconnect
 			}

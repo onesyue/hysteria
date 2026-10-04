@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net"
 	"sync"
@@ -67,7 +68,7 @@ func runCopy(t *testing.T, l TrafficLogger, stats *StreamStats, up, down []byte)
 		_, _ = remotePeer.Write(down)
 		_ = remotePeer.Close()
 	}()
-	err := copyTwoWayEx("u", serverSide, remoteSide, l, stats)
+	err := copyTwoWayEx(context.Background(), "u", serverSide, remoteSide, l, stats)
 	_ = serverSide.Close()
 	_ = remoteSide.Close()
 	wg.Wait()

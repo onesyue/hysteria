@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"io"
@@ -344,6 +345,18 @@ type TrafficVerdictLogger interface {
 	LogStreamTraffic(id string, tx, rx uint64) TrafficVerdict
 	LogDatagramTraffic(id string, tx, rx uint64) TrafficVerdict
 	LogSentDatagramTraffic(id string, tx, rx uint64) TrafficVerdict
+}
+
+// ContextTrafficVerdictLogger extends the two blocking verdict callbacks with
+// their transport lifetime. Stream contexts end when the stream is closed or
+// either copy direction finishes; datagram contexts end with the connection.
+// A limiter must stop waiting on cancellation. Post-send datagrams must still
+// be charged, even when their pacing wait is cancelled.
+// Loggers without this optional extension retain the legacy callbacks.
+type ContextTrafficVerdictLogger interface {
+	TrafficVerdictLogger
+	LogStreamTrafficContext(ctx context.Context, id string, tx, rx uint64) TrafficVerdict
+	LogSentDatagramTrafficContext(ctx context.Context, id string, tx, rx uint64) TrafficVerdict
 }
 
 // StreamStatsOptOut is an optional extension for traffic loggers whose
