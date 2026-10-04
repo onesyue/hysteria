@@ -63,6 +63,12 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    connection before it authenticates, in front of the embedder's own
    receive-memory callbacks; exceeding it refuses the receive and closes that
    connection. The cap stops applying at authentication. Zero disables it.
+13. Optional `ContextTrafficVerdictLogger` carries transport cancellation to
+   blocking stream and downstream-datagram pacing callbacks. Stream closure,
+   client/server shutdown and completion of either copy direction release the
+   remaining waits. Sent datagrams remain chargeable; rejected unsent stream
+   chunks do not become billable. The real QUIC cancellation regressions cover
+   both stream directions and UDP (`traffic_cancel_yue_test.go`).
 
 ## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
 
@@ -102,19 +108,25 @@ the complete core race suite passes with both sides corrected.
 ## quic-go dependency order
 
 All three modules, the workspace and CI checkout refs use signed
-`github.com/onesyue/quic-go v0.62.0-yue.7` at
-`cab1a4dce326b80501272b773b7c6268f7f3ba5e`. This is the maintained private fork;
+`github.com/onesyue/quic-go v0.62.0-yue.9` at
+`d16e3afb4b22129eca62729369ad6f4ef396dd07`. This is the maintained private fork;
 CI uses its existing authenticated source checkout. Remote tag verification and
 authenticated native Go module download confirm the exact commit and checksums.
 No dependency is fetched from an uncommitted local replacement in the release.
 
-Matching `core/v2.12.3-yue.3` and `extras/v2.12.3-yue.3` tags identify this source
+Matching `core/v2.12.3-yue.4` and `extras/v2.12.3-yue.4` tags identify this source
 and dependency closure; prior immutable tags remain available.
 
 yue.7 (2026-10-04) adds only the backport of canonical upstream #5876:
 `quicvarint.Read`/`Peek` use data returned together with an error (for example
 `io.EOF` on the final byte) instead of discarding it. Items 10-12 above ship in
 the same `v2.12.3-yue.3` tags.
+
+yue.9 (2026-10-05) includes yue.8, which restores the fork's cross-platform lint checks and removes
+legacy build-constraint syntax without changing the QUIC wire behavior. It also
+uses the existing race-build time scaling for QUIC deadline test setup and
+teardown; the deadline behavior assertions are unchanged.
+Item 13 above ships in `v2.12.3-yue.4`.
 
 ## Build toolchain baseline
 
