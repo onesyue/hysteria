@@ -102,14 +102,19 @@ the complete core race suite passes with both sides corrected.
 ## quic-go dependency order
 
 All three modules, the workspace and CI checkout refs use signed
-`github.com/onesyue/quic-go v0.62.0-yue.6` at
-`2ea05b4b6cc0f7a9e6aabfdfd5fa4fbdae2c1078`. This is the maintained private fork;
+`github.com/onesyue/quic-go v0.62.0-yue.7` at
+`cab1a4dce326b80501272b773b7c6268f7f3ba5e`. This is the maintained private fork;
 CI uses its existing authenticated source checkout. Remote tag verification and
 authenticated native Go module download confirm the exact commit and checksums.
 No dependency is fetched from an uncommitted local replacement in the release.
 
-Matching `core/v2.12.3-yue.1` and `extras/v2.12.3-yue.1` tags identify this source
+Matching `core/v2.12.3-yue.3` and `extras/v2.12.3-yue.3` tags identify this source
 and dependency closure; prior immutable tags remain available.
+
+yue.7 (2026-10-04) adds only the backport of canonical upstream #5876:
+`quicvarint.Read`/`Peek` use data returned together with an error (for example
+`io.EOF` on the final byte) instead of discarding it. Items 10-12 above ship in
+the same `v2.12.3-yue.3` tags.
 
 ## Build toolchain baseline
 
