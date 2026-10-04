@@ -71,6 +71,8 @@ func NewServer(config *Config) (Server, error) {
 		AssumePeerMaxDatagramFrameSize: protocol.MaxDatagramFrameSize,
 		DisablePathManager:             true,
 	}
+	preAuth := newPreAuthReceive(config.QUICConfig.PreAuthReceiveLimit)
+	preAuth.wrapQUICConfig(quicConfig)
 	tr := &quic.Transport{
 		Conn:       config.Conn,
 		DisableGSO: config.QUICConfig.DisableGSO,
@@ -103,6 +105,7 @@ func NewServer(config *Config) (Server, error) {
 		listener:  listener,
 		conns:     make(map[*quic.Conn]struct{}),
 		closeDone: make(chan struct{}),
+		preAuth:   preAuth,
 	}, nil
 }
 
@@ -120,6 +123,8 @@ type serverImpl struct {
 	closeOnce sync.Once
 	closeDone chan struct{}
 	closeErr  error
+
+	preAuth *preAuthReceive // nil unless QUICConfig.PreAuthReceiveLimit > 0
 }
 
 func (s *serverImpl) Serve() error {
@@ -215,6 +220,11 @@ func (s *serverImpl) serveClient(conn *quic.Conn) {
 
 func (s *serverImpl) handleClient(conn *quic.Conn) {
 	handler := newH3sHandler(s.config, conn)
+	handler.preAuth = s.preAuth
+	if s.config.AuthTimeout > 0 {
+		authTimer := time.AfterFunc(s.config.AuthTimeout, handler.expireIfUnauthenticated)
+		defer authTimer.Stop()
+	}
 	h3s := http3.Server{
 		Handler:          handler,
 		StreamDispatcher: handler.ProxyStreamHijacker,
@@ -245,8 +255,10 @@ type h3sHandler struct {
 	conn   *quic.Conn
 
 	authenticated bool
+	authExpired   bool // AuthTimeout passed before authentication (yue fork)
 	authMutex     sync.Mutex
 	authID        string
+	preAuth       *preAuthReceive
 	untrack       func()
 	connID        uint32 // a random id for dump streams
 
@@ -261,6 +273,21 @@ func (h *h3sHandler) finish() (authenticated bool, authID string, untrack func()
 	return h.authenticated, h.authID, untrack
 }
 
+// expireIfUnauthenticated closes a connection still unauthenticated when
+// Config.AuthTimeout fires (yue fork). It decides under authMutex, so an
+// authentication either completed before it (and the connection stays) or can
+// no longer complete after it.
+func (h *h3sHandler) expireIfUnauthenticated() {
+	h.authMutex.Lock()
+	if h.authenticated {
+		h.authMutex.Unlock()
+		return
+	}
+	h.authExpired = true
+	h.authMutex.Unlock()
+	_ = h.conn.CloseWithError(closeErrCodeOK, "")
+}
+
 func newH3sHandler(config *Config, conn *quic.Conn) *h3sHandler {
 	return &h3sHandler{
 		config: config,
@@ -273,6 +300,11 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && r.Host == protocol.URLHost && r.URL.Path == protocol.URLPath {
 		h.authMutex.Lock()
 		defer h.authMutex.Unlock()
+		if h.authExpired {
+			// AuthTimeout already closed this connection (yue fork).
+			h.masqHandler(w, r)
+			return
+		}
 		if h.authenticated {
 			// Already authenticated
 			protocol.AuthResponseToHeader(w.Header(), protocol.AuthResponse{
@@ -302,6 +334,7 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// Publish the authenticated state only after registration succeeds.
 			h.authenticated = true
 			h.authID = id
+			h.preAuth.markAuthenticated(h.conn)
 			if h.config.IgnoreClientBandwidth {
 				// Ignore client bandwidth and use the configured congestion controller.
 				congestion.UseConfigured(h.conn, h.config.CongestionConfig.Type, h.config.CongestionConfig.BBRProfile)
@@ -528,6 +561,20 @@ func (io *udpIOImpl) ReceiveMessage() (*protocol.UDPMessage, error) {
 			continue
 		}
 		if io.TrafficLogger != nil {
+			if vl, isVerdict := io.TrafficLogger.(TrafficVerdictLogger); isVerdict {
+				// This loop is shared by every UDP session of the connection:
+				// the verdict logger answers without blocking, and a rejected
+				// datagram is dropped here instead of queued (yue fork).
+				switch vl.LogDatagramTraffic(io.AuthID, uint64(len(udpMsg.Data)), 0) {
+				case TrafficAccept:
+					return udpMsg, nil
+				case TrafficReject:
+					continue
+				default:
+					_ = io.Conn.CloseWithError(closeErrCodeTrafficLimitReached, "")
+					return nil, errDisconnect
+				}
+			}
 			ok := io.TrafficLogger.LogTraffic(io.AuthID, uint64(len(udpMsg.Data)), 0)
 			if !ok {
 				// TrafficLogger requested to disconnect the client
@@ -568,6 +615,15 @@ func (io *udpIOImpl) SendMessage(buf []byte, msg *protocol.UDPMessage) error {
 		return err
 	}
 	if io.TrafficLogger != nil {
+		if vl, isVerdict := io.TrafficLogger.(TrafficVerdictLogger); isVerdict {
+			// Already sent: a rejection has nothing left to refuse, so only a
+			// disconnect verdict changes anything (yue fork).
+			if vl.LogSentDatagramTraffic(io.AuthID, 0, uint64(len(msg.Data))) == TrafficDisconnect {
+				_ = io.Conn.CloseWithError(closeErrCodeTrafficLimitReached, "")
+				return errDisconnect
+			}
+			return nil
+		}
 		var ok bool
 		// The datagram is already on the wire: tell a logger that can tell the
 		// difference, so a refusal here still charges these bytes.

@@ -46,6 +46,23 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    and exits after the last one expires, under the same lock that inserts and
    deletes sessions. A connection that never carries UDP owns no ticker
    (`core/server/udp_idle_cleanup_yue_test.go`).
+10. A traffic logger that implements `TrafficVerdictLogger` separates
+   "refuse this unit" from "disconnect the client". `TrafficReject` closes only
+   the TCP stream whose chunk was refused, drops only the upstream datagram
+   (the shared datagram receive loop never blocks on it), and is a no-op for a
+   downstream datagram that was already sent; `TrafficDisconnect` keeps the
+   old whole-connection close. Plain `LogTraffic` returning false still closes
+   the connection, so loggers without the extension are unchanged
+   (`core/internal/integration_tests/verdict_yue_test.go`,
+   `core/server/udp_verdict_yue_test.go`).
+11. `Config.AuthTimeout` closes a QUIC connection that has not authenticated
+   within the timeout; the decision is taken under the auth mutex, so an
+   authentication either finished first or can no longer finish. Zero (the
+   default) keeps upstream behaviour.
+12. `QUICConfig.PreAuthReceiveLimit` caps the received-but-unread bytes of one
+   connection before it authenticates, in front of the embedder's own
+   receive-memory callbacks; exceeding it refuses the receive and closes that
+   connection. The cap stops applying at authentication. Zero disables it.
 
 ## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
 

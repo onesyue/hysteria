@@ -41,6 +41,11 @@ type Config struct {
 	EventLogger           EventLogger
 	TrafficLogger         TrafficLogger
 	MasqHandler           http.Handler
+	// AuthTimeout (yue fork) closes a connection that has not authenticated
+	// this long after it was accepted. Zero keeps upstream behaviour: an
+	// unauthenticated connection lives until the QUIC idle timeout, however
+	// many HTTP/3 requests it keeps sending to the masquerade handler.
+	AuthTimeout time.Duration
 }
 
 // fill fills the fields that are not set by the user with default values when possible,
@@ -111,6 +116,9 @@ func (c *Config) fill() error {
 	if c.Authenticator == nil {
 		return errors.ConfigError{Field: "Authenticator", Reason: "must be set"}
 	}
+	if c.AuthTimeout < 0 || (c.AuthTimeout > 0 && c.AuthTimeout < time.Second) {
+		return errors.ConfigError{Field: "AuthTimeout", Reason: "must be zero (disabled) or at least 1s"}
+	}
 	return nil
 }
 
@@ -138,6 +146,16 @@ type QUICConfig struct {
 	DisablePathMTUDiscovery        bool // The server may still override this to true on unsupported platforms.
 	DisableGSO                     bool
 	DisableStatelessReset          bool
+	// PreAuthReceiveLimit (yue fork) caps the received-but-unread bytes one
+	// connection may hold before it authenticates. Zero disables the cap. The
+	// connection flow-control window alone lets every unauthenticated
+	// connection park InitialConnectionReceiveWindow bytes (megabytes) of
+	// process memory; an honest client sends one small HTTP/3 auth request
+	// first. Exceeding the cap refuses the receive, which closes that
+	// connection (quic-go ConnectionRefused). Bytes already counted are
+	// forgotten at authentication: from then on only AllowConnectionReceive
+	// decides.
+	PreAuthReceiveLimit uint64
 }
 
 type CongestionConfig struct {
@@ -280,6 +298,52 @@ type TrafficLogger interface {
 // must either overcharge one refused chunk or leak one delivered datagram.
 type SentTrafficLogger interface {
 	LogSentTraffic(id string, tx, rx uint64) (ok bool)
+}
+
+// TrafficVerdict is a TrafficVerdictLogger's answer for one chunk or datagram.
+//
+// It is an alias of uint8, not a defined type, on purpose: an embedder can
+// implement TrafficVerdictLogger with plain uint8 results, so the same
+// embedder source builds against fork releases that predate the interface
+// (where the methods are simply unused) and against those that call them. The
+// three values below are therefore a wire-stable contract: never renumber.
+type TrafficVerdict = uint8
+
+const (
+	// TrafficAccept forwards (or has forwarded) the bytes.
+	TrafficAccept TrafficVerdict = iota
+	// TrafficReject refuses only this unit: a TCP stream is closed, an
+	// upstream datagram is dropped, an already-sent downstream datagram is
+	// left as sent. The QUIC connection and its other streams continue.
+	TrafficReject
+	// TrafficDisconnect closes the whole QUIC connection, exactly like a
+	// LogTraffic call returning false.
+	TrafficDisconnect
+)
+
+// TrafficVerdictLogger (yue fork) is an optional extension that separates
+// "refuse this unit" from "disconnect the client". With plain LogTraffic the
+// only refusal is a boolean false, and every false closes the whole QUIC
+// connection, so a rate limiter that declines one chunk or one datagram
+// disconnects every stream and UDP session the user has on that connection.
+// A logger that implements this interface is called here INSTEAD OF
+// LogTraffic/LogSentTraffic on the three data paths:
+//
+//   - LogStreamTraffic: before each TCP stream chunk is forwarded, both
+//     directions. It may block (that is how a rate limit slows a stream).
+//   - LogDatagramTraffic: before each upstream UDP datagram is forwarded. It
+//     runs on the connection's single datagram receive loop, which every UDP
+//     session of the connection shares, so it MUST NOT block: a limiter
+//     answers TrafficReject to drop the datagram instead of queueing it.
+//   - LogSentDatagramTraffic: after a downstream datagram was sent (same
+//     contract as SentTrafficLogger: those bytes are already delivered). It
+//     runs on that UDP session's own goroutine and may block to pace it.
+//
+// Loggers without the extension keep the previous behaviour byte for byte.
+type TrafficVerdictLogger interface {
+	LogStreamTraffic(id string, tx, rx uint64) TrafficVerdict
+	LogDatagramTraffic(id string, tx, rx uint64) TrafficVerdict
+	LogSentDatagramTraffic(id string, tx, rx uint64) TrafficVerdict
 }
 
 // StreamStatsOptOut is an optional extension for traffic loggers whose

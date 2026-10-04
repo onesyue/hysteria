@@ -9,6 +9,10 @@ import (
 
 var errDisconnect = errors.New("traffic logger requested disconnect")
 
+// errStreamRejected ends one TCP stream at a TrafficVerdictLogger's
+// TrafficReject. Unlike errDisconnect it never closes the QUIC connection.
+var errStreamRejected = errors.New("traffic logger rejected stream")
+
 const (
 	copyBufMinShift = 12 // 4 KiB
 	copyBufLevels   = 4  // 4, 8, 16, 32 KiB
@@ -25,6 +29,18 @@ var copyBufPools = [copyBufLevels]sync.Pool{
 }
 
 func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error {
+	return copyBufferCheck(dst, src, func(n uint64) error {
+		if !log(n) {
+			// Log returns false, which means that the client should be disconnected
+			return errDisconnect
+		}
+		return nil
+	})
+}
+
+// copyBufferCheck is copyBufferLog with a three-way check: a non-nil error
+// from check ends the copy with that error before the chunk is written.
+func copyBufferCheck(dst io.Writer, src io.Reader, check func(n uint64) error) error {
 	level := 0
 	bufp := copyBufPools[level].Get().(*[]byte)
 	buf := *bufp
@@ -34,9 +50,8 @@ func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error 
 	for {
 		nr, er := src.Read(buf)
 		if nr > 0 {
-			if !log(uint64(nr)) {
-				// Log returns false, which means that the client should be disconnected
-				return errDisconnect
+			if err := check(uint64(nr)); err != nil {
+				return err
 			}
 			nw, ew := dst.Write(buf[0:nr])
 			if ew != nil {
@@ -72,6 +87,9 @@ func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error 
 // copyTwoWayEx proxies with per-chunk traffic logging. stats may be nil, in
 // which case only LogTraffic runs per chunk (see StreamStatsOptOut).
 func copyTwoWayEx(id string, serverRw, remoteRw io.ReadWriter, l TrafficLogger, stats *StreamStats) error {
+	if vl, ok := l.(TrafficVerdictLogger); ok {
+		return copyTwoWayVerdict(id, serverRw, remoteRw, vl, stats)
+	}
 	errChan := make(chan error, 2)
 	if stats == nil {
 		go func() {
@@ -98,6 +116,45 @@ func copyTwoWayEx(id string, serverRw, remoteRw io.ReadWriter, l TrafficLogger, 
 			stats.LastActiveTime.Store(time.Now())
 			stats.Tx.Add(n)
 			return l.LogTraffic(id, n, 0)
+		})
+	}()
+	// Block until one of the two goroutines returns
+	return <-errChan
+}
+
+// streamVerdictError maps a TrafficVerdict to the copy loop's result.
+func streamVerdictError(v TrafficVerdict) error {
+	switch v {
+	case TrafficAccept:
+		return nil
+	case TrafficReject:
+		return errStreamRejected
+	default:
+		return errDisconnect
+	}
+}
+
+// copyTwoWayVerdict is copyTwoWayEx for a TrafficVerdictLogger (yue fork):
+// TrafficReject ends only this stream (errStreamRejected), TrafficDisconnect
+// the connection (errDisconnect). stats may be nil as in copyTwoWayEx.
+func copyTwoWayVerdict(id string, serverRw, remoteRw io.ReadWriter, l TrafficVerdictLogger, stats *StreamStats) error {
+	errChan := make(chan error, 2)
+	go func() {
+		errChan <- copyBufferCheck(serverRw, remoteRw, func(n uint64) error {
+			if stats != nil {
+				stats.LastActiveTime.Store(time.Now())
+				stats.Rx.Add(n)
+			}
+			return streamVerdictError(l.LogStreamTraffic(id, 0, n))
+		})
+	}()
+	go func() {
+		errChan <- copyBufferCheck(remoteRw, serverRw, func(n uint64) error {
+			if stats != nil {
+				stats.LastActiveTime.Store(time.Now())
+				stats.Tx.Add(n)
+			}
+			return streamVerdictError(l.LogStreamTraffic(id, n, 0))
 		})
 	}()
 	// Block until one of the two goroutines returns
