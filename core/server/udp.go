@@ -243,6 +243,7 @@ type udpSessionManager struct {
 	io          udpIO
 	eventLogger udpEventLogger
 	idleTimeout time.Duration
+	maxSessions int
 
 	mutex sync.RWMutex
 	m     map[uint32]*udpSessionEntry
@@ -257,11 +258,12 @@ type udpSessionManager struct {
 	cleanupRunning bool
 }
 
-func newUDPSessionManager(io udpIO, eventLogger udpEventLogger, idleTimeout time.Duration) *udpSessionManager {
+func newUDPSessionManager(io udpIO, eventLogger udpEventLogger, idleTimeout time.Duration, maxSessions int) *udpSessionManager {
 	return &udpSessionManager{
 		io:          io,
 		eventLogger: eventLogger,
 		idleTimeout: idleTimeout,
+		maxSessions: maxSessions,
 		m:           make(map[uint32]*udpSessionEntry),
 	}
 }
@@ -346,13 +348,30 @@ func (m *udpSessionManager) cleanup(idleOnly bool) {
 	}
 }
 
-func (m *udpSessionManager) feed(msg *protocol.UDPMessage) {
+// canAdmit is checked before receive accounting. Run is the only producer of
+// sessions, so between this check and feed no other goroutine can consume a
+// free slot; concurrent cleanup can only release one. feed keeps its own cap
+// for non-network callers and reserves before allocating fragment state.
+func (m *udpSessionManager) canAdmit(id uint32) bool {
 	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.m[id] != nil || len(m.m) < m.maxSessions
+}
+
+func (m *udpSessionManager) feed(msg *protocol.UDPMessage) {
+	m.mutex.Lock()
 	entry := m.m[msg.SessionID]
-	m.mutex.RUnlock()
 
 	// Create a new session if not exists
 	if entry == nil {
+		// Reserve before defragmentation, hooks or socket creation: incomplete
+		// fragments consume memory too. Never evict a working session to make
+		// room for a new ID, or close the QUIC connection when it reaches its
+		// cap. A later datagram may retry after idle/error cleanup frees space.
+		if len(m.m) >= m.maxSessions {
+			m.mutex.Unlock()
+			return
+		}
 		dialFunc := func(addr string, firstMsgData []byte) (conn UDPConn, actualAddr string, err error) {
 			// Call the hook
 			err = m.io.Hook(firstMsgData, &addr)
@@ -372,18 +391,19 @@ func (m *udpSessionManager) feed(msg *protocol.UDPMessage) {
 
 			// Remove the session from the map
 			m.mutex.Lock()
-			delete(m.m, entry.ID)
+			if m.m[entry.ID] == entry {
+				delete(m.m, entry.ID)
+			}
 			m.mutex.Unlock()
 		}
 
 		entry = newUDPSessionEntry(msg.SessionID, m.io, dialFunc, exitFunc)
 
 		// Insert the session into the map
-		m.mutex.Lock()
 		m.m[msg.SessionID] = entry
 		m.startIdleCleanupLocked()
-		m.mutex.Unlock()
 	}
+	m.mutex.Unlock()
 
 	// Feed the message to the session
 	// Feed (send) errors are ignored for now,

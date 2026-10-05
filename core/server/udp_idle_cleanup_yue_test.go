@@ -89,7 +89,7 @@ func TestUDPIdleCleanupRunsOnlyWhileSessionsExist(t *testing.T) {
 
 	io := &idleTestIO{msgs: make(chan *protocol.UDPMessage, 4)}
 	events := &idleTestEvents{}
-	sm := newUDPSessionManager(io, events, 300*time.Millisecond)
+	sm := newUDPSessionManager(io, events, 300*time.Millisecond, defaultMaxUDPSessions)
 	done := make(chan error, 1)
 	go func() { done <- sm.Run() }()
 
@@ -137,7 +137,7 @@ func TestUDPIdleCleanupKeepsRunningForActiveSessions(t *testing.T) {
 
 	io := &idleTestIO{msgs: make(chan *protocol.UDPMessage, 4)}
 	events := &idleTestEvents{}
-	sm := newUDPSessionManager(io, events, 800*time.Millisecond)
+	sm := newUDPSessionManager(io, events, 800*time.Millisecond, defaultMaxUDPSessions)
 	done := make(chan error, 1)
 	go func() { done <- sm.Run() }()
 

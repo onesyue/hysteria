@@ -116,6 +116,7 @@ func TestServerConfig(t *testing.T) {
 		SpeedTest:             true,
 		DisableUDP:            true,
 		UDPIdleTimeout:        120 * time.Second,
+		MaxUDPSessions:        512,
 		Auth: serverConfigAuth{
 			Type:     "password",
 			Password: "goofy_ahh_password",

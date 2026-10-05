@@ -72,6 +72,22 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    remaining waits. Sent datagrams remain chargeable; rejected unsent stream
    chunks do not become billable. The real QUIC cancellation regressions cover
    both stream directions and UDP (`traffic_cancel_yue_test.go`).
+14. `Config.MaxUDPSessions` bounds each authenticated connection's UDP session
+   map, including incomplete fragments, before hooks, socket creation or receive
+   goroutines. Zero selects 256, negative values are invalid, and the standalone
+   server exposes `maxUDPSessions`. New IDs at capacity are dropped; established
+   sessions and other streams keep working. Idle expiry, failed dialing and
+   connection shutdown release ownership exactly once. The default permits 256
+   simultaneous UDP session IDs while bounding the receive-loop
+   payload buffers to 2 MiB (two 4096-byte buffers per complete session), plus
+   socket, goroutine, fragment and cache overhead. This is a per-connection
+   boundary, not a claim that process-wide memory or multiple connections are
+   bounded by 2 MiB. It is independent of QUIC stream/window settings. Admission
+   is checked before receive accounting, so capacity-refused datagrams neither
+   bill traffic nor consume rate tokens. Accepted receive/sent traffic callbacks
+   are unchanged. Real local sockets, concurrent
+   close/expiry and authenticated QUIC regressions cover admission and cleanup
+   (`udp_session_limit_yue_test.go` in server and integration tests).
 
 ## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
 

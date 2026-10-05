@@ -86,6 +86,7 @@ type serverConfig struct {
 	SpeedTest             bool                        `mapstructure:"speedTest"`
 	DisableUDP            bool                        `mapstructure:"disableUDP"`
 	UDPIdleTimeout        time.Duration               `mapstructure:"udpIdleTimeout"`
+	MaxUDPSessions        int                         `mapstructure:"maxUDPSessions"`
 	Auth                  serverConfigAuth            `mapstructure:"auth"`
 	Resolver              serverConfigResolver        `mapstructure:"resolver"`
 	Sniff                 serverConfigSniff           `mapstructure:"sniff"`
@@ -1452,6 +1453,7 @@ func (c *serverConfig) fillDisableUDP(hyConfig *server.Config) error {
 
 func (c *serverConfig) fillUDPIdleTimeout(hyConfig *server.Config) error {
 	hyConfig.UDPIdleTimeout = c.UDPIdleTimeout
+	hyConfig.MaxUDPSessions = c.MaxUDPSessions
 	return nil
 }
 

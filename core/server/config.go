@@ -23,6 +23,7 @@ const (
 	defaultMaxIdleTimeout      = 30 * time.Second
 	defaultMaxIncomingStreams  = 1024
 	defaultUDPIdleTimeout      = 60 * time.Second
+	defaultMaxUDPSessions      = 256
 )
 
 type Config struct {
@@ -38,10 +39,15 @@ type Config struct {
 	IgnoreClientBandwidth bool
 	DisableUDP            bool
 	UDPIdleTimeout        time.Duration
-	Authenticator         Authenticator
-	EventLogger           EventLogger
-	TrafficLogger         TrafficLogger
-	MasqHandler           http.Handler
+	// MaxUDPSessions bounds live UDP sessions per authenticated QUIC connection,
+	// including incomplete fragments. Zero selects 256; negative values are
+	// invalid. At capacity, new session IDs are dropped and existing sessions
+	// keep working. This is separate from QUIC stream/receive-window budgets.
+	MaxUDPSessions int
+	Authenticator  Authenticator
+	EventLogger    EventLogger
+	TrafficLogger  TrafficLogger
+	MasqHandler    http.Handler
 	// AuthTimeout (yue fork) closes a connection that has not authenticated
 	// this long after it was accepted. Zero keeps upstream behaviour: an
 	// unauthenticated connection lives until the QUIC idle timeout, however
@@ -113,6 +119,11 @@ func (c *Config) fill() error {
 		c.UDPIdleTimeout = defaultUDPIdleTimeout
 	} else if c.UDPIdleTimeout < 2*time.Second || c.UDPIdleTimeout > 600*time.Second {
 		return errors.ConfigError{Field: "UDPIdleTimeout", Reason: "must be between 2s and 600s"}
+	}
+	if c.MaxUDPSessions == 0 {
+		c.MaxUDPSessions = defaultMaxUDPSessions
+	} else if c.MaxUDPSessions < 0 {
+		return errors.ConfigError{Field: "MaxUDPSessions", Reason: "must be positive or zero for the default"}
 	}
 	if c.Authenticator == nil {
 		return errors.ConfigError{Field: "Authenticator", Reason: "must be set"}

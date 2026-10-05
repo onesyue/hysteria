@@ -15,7 +15,7 @@ import (
 func TestUDPSessionManager(t *testing.T) {
 	io := newMockUDPIO(t)
 	eventLogger := newMockUDPEventLogger(t)
-	sm := newUDPSessionManager(io, eventLogger, 2*time.Second)
+	sm := newUDPSessionManager(io, eventLogger, 2*time.Second, defaultMaxUDPSessions)
 
 	msgCh := make(chan *protocol.UDPMessage, 4)
 	io.EXPECT().ReceiveMessage().RunAndReturn(func() (*protocol.UDPMessage, error) {

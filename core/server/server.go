@@ -379,11 +379,14 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.backgroundWG.Add(1)
 				go func() {
 					defer h.backgroundWG.Done()
+					udpIO := &udpIOImpl{Conn: h.conn, AuthID: id, TrafficLogger: h.config.TrafficLogger, RequestHook: h.config.RequestHook, Outbound: h.config.Outbound, Context: h.conn.Context()}
 					sm := newUDPSessionManager(
-						&udpIOImpl{Conn: h.conn, AuthID: id, TrafficLogger: h.config.TrafficLogger, RequestHook: h.config.RequestHook, Outbound: h.config.Outbound, Context: h.conn.Context()},
+						udpIO,
 						&udpEventLoggerImpl{h.conn, id, h.config.EventLogger},
 						h.config.UDPIdleTimeout,
+						h.config.MaxUDPSessions,
 					)
+					udpIO.CanAdmitSession = sm.canAdmit
 					_ = sm.Run()
 				}()
 			}
@@ -546,12 +549,13 @@ type udpQUICConn interface {
 
 // udpIOImpl is the IO implementation for udpSessionManager with TrafficLogger support
 type udpIOImpl struct {
-	Context       context.Context
-	Conn          udpQUICConn
-	AuthID        string
-	TrafficLogger TrafficLogger
-	RequestHook   RequestHook
-	Outbound      Outbound
+	Context         context.Context
+	Conn            udpQUICConn
+	AuthID          string
+	TrafficLogger   TrafficLogger
+	RequestHook     RequestHook
+	Outbound        Outbound
+	CanAdmitSession func(uint32) bool
 }
 
 func (io *udpIOImpl) ReceiveMessage() (*protocol.UDPMessage, error) {
@@ -564,6 +568,11 @@ func (io *udpIOImpl) ReceiveMessage() (*protocol.UDPMessage, error) {
 		udpMsg, err := protocol.ParseUDPMessage(msg)
 		if err != nil {
 			// Invalid message, this is fine - just wait for the next
+			continue
+		}
+		// A local resource rejection is not forwarded traffic: discard it
+		// before either legacy or verdict loggers can bill it or spend tokens.
+		if io.CanAdmitSession != nil && !io.CanAdmitSession(udpMsg.SessionID) {
 			continue
 		}
 		if io.TrafficLogger != nil {

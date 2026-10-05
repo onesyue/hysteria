@@ -89,6 +89,7 @@ speedTest: true
 
 disableUDP: true
 udpIdleTimeout: 120s
+maxUDPSessions: 512
 
 auth:
   type: password
