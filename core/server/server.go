@@ -481,7 +481,7 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream, authID string) {
 	}
 	// Dial target
 	streamStats.State.Store(StreamStateConnecting)
-	tConn, err := h.config.Outbound.TCP(reqAddr)
+	tConn, err := dialOutboundTCP(h.config.Outbound, authID, reqAddr)
 	if err != nil {
 		if !hooked {
 			_ = protocol.WriteTCPResponse(stream, false, err.Error())

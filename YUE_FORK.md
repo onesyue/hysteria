@@ -89,6 +89,15 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    close/expiry and authenticated QUIC regressions cover admission and cleanup
    (`udp_session_limit_yue_test.go` in server and integration tests).
 
+15. Optional `AuthenticatedOutbound` (2026-10-05): when the configured
+   `Outbound` also implements `TCPAuthenticated(authID, reqAddr)`, each TCP
+   request is dialled through it with the authenticated client's ID, so an
+   embedder can make per-user dial decisions (yue-node gives each user a
+   stable IPv6 source address of their own). Outbounds without the extension
+   keep upstream's `TCP(reqAddr)`; UDP is unchanged. A real QUIC round trip
+   covers both shapes (`core/internal/integration_tests/authenticated_outbound_yue_test.go`).
+   Ships in `v2.12.3-yue.6`.
+
 ## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
 
 Merged upstream `master` through `62d1016` (five commits): the port hopping

@@ -199,6 +199,26 @@ type Outbound interface {
 	CheckUDP(reqAddr string) error
 }
 
+// AuthenticatedOutbound is an optional extension of Outbound (yue fork).
+// When the configured Outbound implements it, every TCP request is dialled
+// through TCPAuthenticated with the authenticated client's ID instead of
+// through TCP, so the outbound can make per-user decisions (yue-node: a
+// per-user IPv6 source address). Outbounds without it keep the upstream call.
+// UDP is unchanged: one session socket serves many destinations.
+type AuthenticatedOutbound interface {
+	Outbound
+	TCPAuthenticated(authID, reqAddr string) (net.Conn, error)
+}
+
+// dialOutboundTCP dials reqAddr for the authenticated client authID through
+// the AuthenticatedOutbound extension when ob has it, else through ob.TCP.
+func dialOutboundTCP(ob Outbound, authID, reqAddr string) (net.Conn, error) {
+	if ao, ok := ob.(AuthenticatedOutbound); ok {
+		return ao.TCPAuthenticated(authID, reqAddr)
+	}
+	return ob.TCP(reqAddr)
+}
+
 // UDPConn is like net.PacketConn, but uses string for addresses.
 type UDPConn interface {
 	ReadFrom(b []byte) (int, string, error)
