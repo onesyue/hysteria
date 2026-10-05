@@ -174,6 +174,16 @@ provision a project-scoped Cloudflare Pages API token and account ID as GitHub
 Actions secrets, then use Cloudflare's supported `wrangler-action`; do not
 restore the archived `pages-action` or its Wrangler 2 runtime.
 
+## Standalone crypto dependency floor (2026-10-05)
+
+All three modules now select `golang.org/x/crypto v0.57.0`, matching the
+version already selected by the embedding Node and Xray. `go work sync`
+records its required transitive module versions and checksums consistently.
+The previous v0.54.0 build did not import `golang.org/x/crypto/ssh`; the
+September SSH advisories therefore do not establish a reachable Hysteria
+vulnerability. This update removes the older standalone/probe dependency
+floor while retaining the existing Go language version and QUIC fork.
+
 ## Complete dependency adoption (2026-09-22)
 
 The embedding yue-node already overrode QUIC to yue.6, but the standalone
