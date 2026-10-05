@@ -248,6 +248,11 @@ func (s *serverImpl) handleClient(conn *quic.Conn) {
 		}
 	}
 	_ = conn.CloseWithError(closeErrCodeOK, "")
+	// A slow Authenticate can publish pre-auth state after QUIC's close
+	// notification already forgot it. HTTP/3 has joined every request handler
+	// above, and CloseWithError joins the receive loop, so neither producer can
+	// recreate the entry after this final cleanup.
+	s.preAuth.forget(conn)
 }
 
 type h3sHandler struct {

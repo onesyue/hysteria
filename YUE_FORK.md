@@ -63,6 +63,9 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    connection before it authenticates, in front of the embedder's own
    receive-memory callbacks; exceeding it refuses the receive and closes that
    connection. The cap stops applying at authentication. Zero disables it.
+   Final connection cleanup joins HTTP/3 authentication handlers and QUIC's
+   receive loop before forgetting this state again, so a slow authentication
+   completing after the close notification cannot retain a closed connection.
 13. Optional `ContextTrafficVerdictLogger` carries transport cancellation to
    blocking stream and downstream-datagram pacing callbacks. Stream closure,
    client/server shutdown and completion of either copy direction release the
@@ -114,7 +117,7 @@ CI uses its existing authenticated source checkout. Remote tag verification and
 authenticated native Go module download confirm the exact commit and checksums.
 No dependency is fetched from an uncommitted local replacement in the release.
 
-Matching `core/v2.12.3-yue.4` and `extras/v2.12.3-yue.4` tags identify this source
+Matching `core/v2.12.3-yue.5` and `extras/v2.12.3-yue.5` tags identify this source
 and dependency closure; prior immutable tags remain available.
 
 yue.7 (2026-10-04) adds only the backport of canonical upstream #5876:
@@ -127,6 +130,10 @@ legacy build-constraint syntax without changing the QUIC wire behavior. It also
 uses the existing race-build time scaling for QUIC deadline test setup and
 teardown; the deadline behavior assertions are unchanged.
 Item 13 above ships in `v2.12.3-yue.4`.
+The final pre-auth cleanup in item 12 ships in `v2.12.3-yue.5`. Its real QUIC
+regression covers authentication before close, during the close notification
+(before context cancellation), and after context cancellation. The latter two
+retain the connection on the preceding release and pass after final cleanup.
 
 ## Build toolchain baseline
 
