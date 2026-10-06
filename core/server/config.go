@@ -219,6 +219,29 @@ func dialOutboundTCP(ob Outbound, authID, reqAddr string) (net.Conn, error) {
 	return ob.TCP(reqAddr)
 }
 
+// AuthenticatedUDPOutbound is an optional extension of Outbound (yue fork).
+// When the configured Outbound implements it, every UDP session socket is
+// opened through UDPAuthenticated with the authenticated client's ID instead
+// of through UDP, so the outbound can attribute the session's datagrams to a
+// user (yue-node: per-user abuse detection on outgoing datagrams). reqAddr is
+// the session's first destination, exactly as UDP receives it; the returned
+// UDPConn still serves every destination of the session. Outbounds without
+// it keep the upstream call. It is independent of AuthenticatedOutbound, so
+// an embedder can take either extension alone.
+type AuthenticatedUDPOutbound interface {
+	Outbound
+	UDPAuthenticated(authID, reqAddr string) (UDPConn, error)
+}
+
+// dialOutboundUDP opens the session socket for authID through the
+// AuthenticatedUDPOutbound extension when ob has it, else through ob.UDP.
+func dialOutboundUDP(ob Outbound, authID, reqAddr string) (UDPConn, error) {
+	if ao, ok := ob.(AuthenticatedUDPOutbound); ok {
+		return ao.UDPAuthenticated(authID, reqAddr)
+	}
+	return ob.UDP(reqAddr)
+}
+
 // UDPConn is like net.PacketConn, but uses string for addresses.
 type UDPConn interface {
 	ReadFrom(b []byte) (int, string, error)

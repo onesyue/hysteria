@@ -98,6 +98,18 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    covers both shapes (`core/internal/integration_tests/authenticated_outbound_yue_test.go`).
    Ships in `v2.12.3-yue.6`.
 
+16. Optional `AuthenticatedUDPOutbound` (2026-10-06): when the configured
+   `Outbound` also implements `UDPAuthenticated(authID, reqAddr)`, each UDP
+   session socket is opened through it with the authenticated client's ID
+   (reqAddr is the session's first destination; the socket still serves every
+   destination of the session). yue-node wraps the returned `UDPConn` to
+   attribute outgoing datagrams to a user for BitTorrent/DHT/uTP detection and
+   per-user fan-out limits (fair-use endgame L4). Independent of the TCP
+   extension; outbounds without it keep upstream's `UDP(reqAddr)`. A real QUIC
+   round trip over two destinations covers both shapes
+   (`core/internal/integration_tests/authenticated_udp_outbound_yue_test.go`).
+   Not yet tagged: the next tag (`core/v2.12.3-yue.7`) carries it.
+
 ## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
 
 Merged upstream `master` through `62d1016` (five commits): the port hopping

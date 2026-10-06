@@ -675,7 +675,7 @@ func (io *udpIOImpl) Hook(data []byte, reqAddr *string) error {
 }
 
 func (io *udpIOImpl) UDP(reqAddr string) (UDPConn, error) {
-	return io.Outbound.UDP(reqAddr)
+	return dialOutboundUDP(io.Outbound, io.AuthID, reqAddr)
 }
 
 func (io *udpIOImpl) CheckUDP(reqAddr string) error {
