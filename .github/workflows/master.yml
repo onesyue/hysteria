@@ -5,6 +5,11 @@ on:
     branches:
       - master
 
+
+# Least privilege (W8.2, 2026-10-17): read-only token unless a job widens it.
+permissions:
+  contents: read
+
 jobs:
   build:
     uses: ./.github/workflows/build-common.yml

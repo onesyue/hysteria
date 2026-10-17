@@ -5,6 +5,11 @@ on:
     tags:
       - app/v*.*.*
 
+
+# Least privilege (W8.2, 2026-10-17): read-only token unless a job widens it.
+permissions:
+  contents: read
+
 jobs:
   build:
     uses: ./.github/workflows/build-common.yml
@@ -15,6 +20,8 @@ jobs:
     name: Publish
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # softprops/action-gh-release creates the release
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,6 +60,8 @@ jobs:
           destination_dir: "app/${{ steps.get_version.outputs.version }}"
 
       - name: Publish to API
-        run: |
-          export HY_API_POST_KEY=${{ secrets.HY2_API_POST_KEY }}
-          uv run python hyperbole.py publish
+        # Secrets reach the shell through env, never through template expansion
+        # into the script body (no shell-injection or log-echo surface).
+        env:
+          HY_API_POST_KEY: ${{ secrets.HY2_API_POST_KEY }}
+        run: uv run python hyperbole.py publish

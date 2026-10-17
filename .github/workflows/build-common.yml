@@ -6,6 +6,11 @@ on:
       QUIC_GO_DEPLOY_KEY:
         required: true
 
+
+# Least privilege (W8.2, 2026-10-17): read-only token unless a job widens it.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build
