@@ -18,6 +18,7 @@ import (
 // Run an already compiled test binary as root with
 // HYSTERIA_FIREWALL_INTEGRATION=1. All rules, interfaces, and routes are confined
 // to temporary network namespaces; the host's firewall is never modified.
+// The test container needs a writable /proc/sys in its isolated mount namespace.
 func TestUDPPortRedirectIntegration(t *testing.T) {
 	if os.Getenv("HYSTERIA_FIREWALL_INTEGRATION") != "1" {
 		t.Skip("set HYSTERIA_FIREWALL_INTEGRATION=1 to run privileged network namespace tests")
@@ -39,6 +40,10 @@ func TestUDPPortRedirectIntegration(t *testing.T) {
 					server, left, right := firewallTestNamespaces(t)
 					startFirewallEcho(t, server, "41000", "server")
 					startFirewallEcho(t, right, "41001", "remote")
+					// Prove the fixture forwards both families before installing rules.
+					for _, remote := range []string{"198.51.100.2", "fd00:2::2"} {
+						firewallProbe(t, left, remote, "41001", "remote")
+					}
 					runner := namespaceRunner{namespace: server}
 					cleanup, err := setupUDPPortRedirectWithRunner(runner,
 						&net.UDPAddr{IP: net.ParseIP(bind), Port: 41000},
@@ -125,6 +130,11 @@ func firewallTestNamespaces(t *testing.T) (server, left, right string) {
 		}
 	}
 	firewallNSCommand(t, server, "sysctl", "-qw", "net.ipv4.ip_forward=1", "net.ipv6.conf.all.forwarding=1")
+	// procps can return success after ignoring writes to a read-only /proc/sys.
+	for _, key := range []string{"net.ipv4.ip_forward", "net.ipv6.conf.all.forwarding"} {
+		require.Equal(t, "1", strings.TrimSpace(firewallNSCommand(t, server, "sysctl", "-n", key)),
+			"fixture forwarding did not take effect; check the test container's /proc/sys mount: %s", key)
+	}
 	firewallCommand(t, "ip", "-n", left, "route", "add", "default", "via", "192.0.2.1")
 	firewallCommand(t, "ip", "-n", right, "route", "add", "default", "via", "198.51.100.1")
 	firewallCommand(t, "ip", "-n", left, "-6", "route", "add", "default", "via", "fd00:1::1")
