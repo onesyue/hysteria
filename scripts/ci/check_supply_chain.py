@@ -14,10 +14,10 @@ ERRORS: list[str] = []
 QUIC_GO_VERSION = "v0.62.0-yue.10"
 QUIC_GO_COMMIT = "f63104b40e65331d2f322eb975f207e80f703428"
 QUIC_GO_MODULES = ("app", "core", "extras")
-GO_VERSION = "1.26.8"
+GO_VERSION = "1.27.2"
 GO_BUILDER_IMAGE = (
-    "golang:1.26.8-alpine3.24@"
-    "sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628"
+    "golang:1.27.2-alpine3.24@"
+    "sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d"
 )
 
 
