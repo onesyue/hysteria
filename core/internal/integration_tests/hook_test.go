@@ -16,7 +16,6 @@ func TestClientServerHookTCP(t *testing.T) {
 	fakeEchoAddr := "hahanope:6666"
 	realEchoAddr := "127.0.0.1:22333"
 
-	// Create server
 	udpConn, udpAddr, err := serverConn()
 	assert.NoError(t, err)
 	auth := mocks.NewMockAuthenticator(t)
@@ -46,14 +45,12 @@ func TestClientServerHookTCP(t *testing.T) {
 	defer s.Close()
 	go s.Serve()
 
-	// Create TCP echo server
 	echoListener, err := net.Listen("tcp", realEchoAddr)
 	assert.NoError(t, err)
 	echoServer := &tcpEchoServer{Listener: echoListener}
 	defer echoServer.Close()
 	go echoServer.Serve()
 
-	// Create client
 	c, _, err := client.NewClient(&client.Config{
 		ServerAddr: udpAddr,
 		TLSConfig:  client.TLSConfig{InsecureSkipVerify: true},
@@ -80,7 +77,6 @@ func TestClientServerHookUDP(t *testing.T) {
 	fakeEchoAddr := "hahanope:6666"
 	realEchoAddr := "127.0.0.1:22333"
 
-	// Create server
 	udpConn, udpAddr, err := serverConn()
 	assert.NoError(t, err)
 	auth := mocks.NewMockAuthenticator(t)
@@ -104,14 +100,12 @@ func TestClientServerHookUDP(t *testing.T) {
 	defer s.Close()
 	go s.Serve()
 
-	// Create UDP echo server
 	echoConn, err := net.ListenPacket("udp", realEchoAddr)
 	assert.NoError(t, err)
 	echoServer := &udpEchoServer{Conn: echoConn}
 	defer echoServer.Close()
 	go echoServer.Serve()
 
-	// Create client
 	c, _, err := client.NewClient(&client.Config{
 		ServerAddr: udpAddr,
 		TLSConfig:  client.TLSConfig{InsecureSkipVerify: true},

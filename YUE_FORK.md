@@ -174,12 +174,12 @@ retain the connection on the preceding release and pass after final cleanup.
 
 ## Build toolchain baseline
 
-CI and the container builder use Go `1.26.8`. The container builder is pinned
-to the Docker Official Image `golang:1.26.8-alpine3.24` multi-platform OCI
-index at
-`sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628`.
-The supply-chain guard binds both workflow pins and the Docker tag-plus-digest
-to this baseline so a partial patch upgrade fails closed.
+The [test workflow](.github/workflows/test.yml) and
+[build workflow](.github/workflows/build-common.yml) pin the CI compiler.
+[Dockerfile](Dockerfile) pins the container toolchain by tag and OCI digest.
+The [supply-chain guard](scripts/ci/check_supply_chain.py) binds these inputs
+to one baseline so a partial upgrade fails closed. Module and workspace `go`
+directives define the language floor; they are not the CI patch-version pin.
 
 ## Installer script publication ownership
 
