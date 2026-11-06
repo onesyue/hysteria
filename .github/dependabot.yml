@@ -1,6 +1,9 @@
+# Owner policy: no automatic Issues or PRs. Security-update PRs are separately
+# disabled in repository settings; dependency alerts and scans remain enabled.
 version: 2
 updates:
   - package-ecosystem: "gomod"
+    open-pull-requests-limit: 0
     directory: "/"
     schedule:
       interval: "daily"
@@ -8,6 +11,7 @@ updates:
     cooldown:
       default-days: 3
   - package-ecosystem: "github-actions"
+    open-pull-requests-limit: 0
     directory: "/"
     schedule:
       interval: "daily"
@@ -15,6 +19,7 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: "uv"
+    open-pull-requests-limit: 0
     directory: "/"
     schedule:
       interval: "daily"
