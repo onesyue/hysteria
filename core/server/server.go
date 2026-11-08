@@ -67,6 +67,10 @@ func NewServer(config *Config) (Server, error) {
 		MaxIncomingStreams:             config.QUICConfig.MaxIncomingStreams,
 		DisablePathMTUDiscovery:        config.QUICConfig.DisablePathMTUDiscovery,
 		EnableDatagrams:                true,
+		// The YueLink client always dials with early=true. Without Allow0RTT the
+		// server rejects that flight and the handshake stays 1-RTT. The first
+		// flight can be replayed, the same property as TCP Fast Open.
+		Allow0RTT:                      true,
 		MaxDatagramFrameSize:           protocol.MaxDatagramFrameSize,
 		AssumePeerMaxDatagramFrameSize: protocol.MaxDatagramFrameSize,
 		DisablePathManager:             true,
