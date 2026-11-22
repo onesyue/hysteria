@@ -174,6 +174,7 @@ type serverConfigQUIC struct {
 	InitConnectionReceiveWindow uint64        `mapstructure:"initConnReceiveWindow"`
 	MaxConnectionReceiveWindow  uint64        `mapstructure:"maxConnReceiveWindow"`
 	MaxIdleTimeout              time.Duration `mapstructure:"maxIdleTimeout"`
+	KeepAlivePeriod             time.Duration `mapstructure:"keepAlivePeriod"`
 	MaxIncomingStreams          int64         `mapstructure:"maxIncomingStreams"`
 	DisablePathMTUDiscovery     bool          `mapstructure:"disablePathMTUDiscovery"`
 	DisableStatelessReset       bool          `mapstructure:"disableStatelessReset"`
@@ -1211,6 +1212,7 @@ func (c *serverConfig) fillQUICConfig(hyConfig *server.Config) error {
 		InitialConnectionReceiveWindow: c.QUIC.InitConnectionReceiveWindow,
 		MaxConnectionReceiveWindow:     c.QUIC.MaxConnectionReceiveWindow,
 		MaxIdleTimeout:                 c.QUIC.MaxIdleTimeout,
+		KeepAlivePeriod:                c.QUIC.KeepAlivePeriod,
 		MaxIncomingStreams:             c.QUIC.MaxIncomingStreams,
 		DisablePathMTUDiscovery:        c.QUIC.DisablePathMTUDiscovery,
 		DisableStatelessReset:          c.QUIC.DisableStatelessReset,
