@@ -24,7 +24,7 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
-	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/koron/go-ssdp v0.0.4 // indirect
 	github.com/libp2p/go-netroute v0.2.1 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
@@ -47,4 +47,4 @@ require (
 
 replace github.com/apernet/hysteria/core/v2 => ../core
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.62.0-yue.10
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.65.1-0.20261122204548-a13262e10709

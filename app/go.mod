@@ -51,7 +51,7 @@ require (
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
-	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/koron/go-ssdp v0.0.4 // indirect
 	github.com/libdns/libdns v1.1.1 // indirect
@@ -102,4 +102,4 @@ replace github.com/apernet/hysteria/core/v2 => ../core
 
 replace github.com/apernet/hysteria/extras/v2 => ../extras
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.62.0-yue.10
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.65.1-0.20261122204548-a13262e10709
