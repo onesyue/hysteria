@@ -36,7 +36,7 @@ func (echLoopbackConnFactory) New(net.Addr) (net.PacketConn, error) {
 
 type echLoopbackOutbound struct{ server.Outbound }
 
-func (*echLoopbackOutbound) UDP(string) (server.UDPConn, error) {
+func (*echLoopbackOutbound) UDP(*server.RequestInfo, string) (server.UDPConn, error) {
 	c, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
