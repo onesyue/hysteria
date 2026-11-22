@@ -36,7 +36,7 @@ func (r *fakeRunner) Run(name string, args ...string) error {
 func TestSetupUDPPortRedirectWithRunnerNFTables(t *testing.T) {
 	runner := &fakeRunner{paths: map[string]bool{"nft": true}}
 	addr := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20002}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20002}}
 
 	cleanup, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func TestSetupUDPPortRedirectWithRunnerNFTables(t *testing.T) {
 func TestSetupUDPPortRedirectWithRunnerIPTablesFallback(t *testing.T) {
 	runner := &fakeRunner{paths: map[string]bool{"iptables": true}}
 	addr := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20000}, {20002, 20003}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20000}, {Start: 20002, End: 20003}}
 
 	cleanup, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestSetupUDPPortRedirectWithRunnerIPTablesFallback(t *testing.T) {
 func TestSetupUDPPortRedirectWithRunnerNFTablesIPv6Specific(t *testing.T) {
 	runner := &fakeRunner{paths: map[string]bool{"nft": true}}
 	addr := &net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20002}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20002}}
 
 	cleanup, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestSetupUDPPortRedirectWithRunnerNFTablesIPv6Specific(t *testing.T) {
 func TestSetupUDPPortRedirectWithRunnerNFTablesIPv6Unspecified(t *testing.T) {
 	runner := &fakeRunner{paths: map[string]bool{"nft": true}}
 	addr := &net.UDPAddr{IP: net.IPv6unspecified, Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20002}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20002}}
 
 	cleanup, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestSetupUDPPortRedirectWithRunnerNFTablesIPv6Unspecified(t *testing.T) {
 func TestSetupUDPPortRedirectWithRunnerIPTablesIPv6Specific(t *testing.T) {
 	runner := &fakeRunner{paths: map[string]bool{"ip6tables": true}}
 	addr := &net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20002}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20002}}
 
 	cleanup, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestSetupUDPPortRedirectWithRunnerIPTablesIPv6Specific(t *testing.T) {
 func TestSetupUDPPortRedirectWithRunnerIPTablesIPv6Unspecified(t *testing.T) {
 	runner := &fakeRunner{paths: map[string]bool{"iptables": true, "ip6tables": true}}
 	addr := &net.UDPAddr{IP: net.IPv6unspecified, Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20002}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20002}}
 
 	cleanup, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.NoError(t, err)
@@ -193,7 +193,7 @@ func TestSetupUDPPortRedirectWithRunnerIPTablesIPv6Unspecified(t *testing.T) {
 func TestSetupUDPPortRedirectWithRunnerIPTablesIPv4Specific(t *testing.T) {
 	runner := &fakeRunner{paths: map[string]bool{"iptables": true}}
 	addr := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20002}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20002}}
 
 	cleanup, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.NoError(t, err)
@@ -219,7 +219,7 @@ func TestSetupUDPPortRedirectWithRunnerRollback(t *testing.T) {
 		fail:  3,
 	}
 	addr := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 20000}
-	ports := eUtils.PortUnion{{20000, 20001}}
+	ports := eUtils.PortUnion{{Start: 20000, End: 20001}}
 
 	_, err := setupUDPPortRedirectWithRunner(runner, addr, ports)
 	require.Error(t, err)
@@ -245,7 +245,7 @@ func TestUDPPortRedirectDestinationScope(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					runner := &fakeRunner{paths: map[string]bool{"nft": true, "iptables": true, "ip6tables": true}}
 					cleanup, err := setupUDPPortRedirectWithRunner(runner,
-						&net.UDPAddr{IP: tc.ip, Port: 443}, eUtils.PortUnion{{443, 443}, {20000, 60000}})
+						&net.UDPAddr{IP: tc.ip, Port: 443}, eUtils.PortUnion{{Start: 443, End: 443}, {Start: 20000, End: 60000}})
 					require.NoError(t, err)
 					wildcard := tc.ip == nil || tc.ip.IsUnspecified()
 					rules := 0
