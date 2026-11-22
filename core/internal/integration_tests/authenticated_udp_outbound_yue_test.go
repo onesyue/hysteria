@@ -57,10 +57,12 @@ type recordingUDPOutbound struct {
 	authed [][2]string
 }
 
-func (o *recordingUDPOutbound) TCP(string) (net.Conn, error) { return nil, errors.New("no tcp") }
-func (o *recordingUDPOutbound) CheckUDP(string) error        { return nil }
+func (o *recordingUDPOutbound) TCP(*server.RequestInfo, string) (net.Conn, error) {
+	return nil, errors.New("no tcp")
+}
+func (o *recordingUDPOutbound) CheckUDP(*server.RequestInfo, string) error { return nil }
 
-func (o *recordingUDPOutbound) UDP(reqAddr string) (server.UDPConn, error) {
+func (o *recordingUDPOutbound) UDP(_ *server.RequestInfo, reqAddr string) (server.UDPConn, error) {
 	o.mu.Lock()
 	o.plain = append(o.plain, reqAddr)
 	o.mu.Unlock()

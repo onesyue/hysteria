@@ -30,7 +30,7 @@ func (io *idleTestIO) ReceiveMessage() (*protocol.UDPMessage, error) {
 	return m, nil
 }
 func (io *idleTestIO) SendMessage([]byte, *protocol.UDPMessage) error { return nil }
-func (io *idleTestIO) Hook([]byte, *string) error                     { return nil }
+func (io *idleTestIO) Hook([][]byte, *string) (bool, error)           { return true, nil }
 func (io *idleTestIO) UDP(string) (UDPConn, error)                    { return newIdleTestConn(), nil }
 func (io *idleTestIO) CheckUDP(string) error                          { return nil }
 

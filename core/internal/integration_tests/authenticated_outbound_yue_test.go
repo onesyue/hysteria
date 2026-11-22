@@ -29,15 +29,17 @@ func (o *recordingOutbound) dial() (net.Conn, error) {
 	return a, nil
 }
 
-func (o *recordingOutbound) TCP(reqAddr string) (net.Conn, error) {
+func (o *recordingOutbound) TCP(_ *server.RequestInfo, reqAddr string) (net.Conn, error) {
 	o.mu.Lock()
 	o.plain = append(o.plain, reqAddr)
 	o.mu.Unlock()
 	return o.dial()
 }
 
-func (o *recordingOutbound) UDP(string) (server.UDPConn, error) { return nil, errors.New("no udp") }
-func (o *recordingOutbound) CheckUDP(string) error              { return nil }
+func (o *recordingOutbound) UDP(*server.RequestInfo, string) (server.UDPConn, error) {
+	return nil, errors.New("no udp")
+}
+func (o *recordingOutbound) CheckUDP(*server.RequestInfo, string) error { return nil }
 
 type authedRecordingOutbound struct{ *recordingOutbound }
 

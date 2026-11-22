@@ -150,7 +150,7 @@ func indexProbeHosts() []string {
 
 func compileIndexProbeACL(t testing.TB, rule string, site *v2geo.GeoSite) CompiledRuleSet[string] {
 	t.Helper()
-	rules, err := ParseTextRules("reject(" + rule + ")\ndirect(all)\n")
+	rules, err := TranslateText("reject("+rule+")\ndirect(all)\n", "")
 	if err != nil {
 		t.Fatalf("probe ACL does not parse: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestGeositeIndexMatchesLinearScan(t *testing.T) {
 			set := compileIndexProbeACL(t, tc.rule, site)
 			var matched int
 			for _, host := range indexProbeHosts() {
-				got, _ := set.Match(HostInfo{Name: host}, ProtocolTCP, 443)
+				got, _ := set.Match(&Request{Host: host, Proto: ProtocolTCP, Port: 443})
 				want := "direct"
 				if referenceMatch(site, tc.attrs, host) {
 					want = "reject"
@@ -234,7 +234,7 @@ func TestGeositeIndexMatchesLinearScanAtFleetScale(t *testing.T) {
 	)
 	var matched int
 	for _, host := range hosts {
-		got, _ := set.Match(HostInfo{Name: host}, ProtocolTCP, 443)
+		got, _ := set.Match(&Request{Host: host, Proto: ProtocolTCP, Port: 443})
 		want := "direct"
 		if referenceMatch(site, nil, host) {
 			want = "reject"
@@ -255,11 +255,11 @@ func TestGeositeIndexMatchesLinearScanAtFleetScale(t *testing.T) {
 func BenchmarkGeositeMissFleetScale(b *testing.B) {
 	site := bigRootSite(189166)
 	set := compileIndexProbeACL(b, "geosite:probe", site)
-	host := HostInfo{Name: "www.example.com"}
+	host := Request{Host: "www.example.com", Proto: ProtocolTCP, Port: 443}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		if got, _ := set.Match(host, ProtocolTCP, 443); got != "direct" {
+		if got, _ := set.Match(&host); got != "direct" {
 			b.Fatalf("unexpected verdict %q", got)
 		}
 	}
@@ -299,7 +299,7 @@ func TestGeositeIndexDoesNotCostMemory(t *testing.T) {
 		return m.HeapAlloc
 	}
 	before := heap()
-	if got, _ := set.Match(HostInfo{Name: "www.example.com"}, ProtocolTCP, 443); got != "direct" {
+	if got, _ := set.Match(&Request{Host: "www.example.com", Proto: ProtocolTCP, Port: 443}); got != "direct" {
 		t.Fatalf("verdict %q", got)
 	}
 	after := heap()
@@ -330,7 +330,7 @@ func TestGeositeIndexIsRaceFreeUnderConcurrentFirstMatch(t *testing.T) {
 			defer wg.Done()
 			for j := range 50 {
 				host := fmt.Sprintf("ad-%06d.tracker.example", (i*50+j)%6000)
-				got, _ := set.Match(HostInfo{Name: host}, ProtocolTCP, 443)
+				got, _ := set.Match(&Request{Host: host, Proto: ProtocolTCP, Port: 443})
 				want := "direct"
 				if referenceMatch(site, nil, host) {
 					want = "reject"
