@@ -64,6 +64,7 @@ func NewServer(config *Config) (Server, error) {
 		ReleaseConnectionReceive:       config.QUICConfig.ReleaseConnectionReceive,
 		NotifyConnectionClosed:         config.QUICConfig.NotifyConnectionClosed,
 		MaxIdleTimeout:                 config.QUICConfig.MaxIdleTimeout,
+		KeepAlivePeriod:                config.QUICConfig.KeepAlivePeriod,
 		MaxIncomingStreams:             config.QUICConfig.MaxIncomingStreams,
 		DisablePathMTUDiscovery:        config.QUICConfig.DisablePathMTUDiscovery,
 		EnableDatagrams:                true,
