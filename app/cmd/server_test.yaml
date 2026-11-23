@@ -61,6 +61,7 @@ quic:
   initConnReceiveWindow: 77883
   maxConnReceiveWindow: 77884
   maxIdleTimeout: 999s
+  keepAlivePeriod: 4s
   maxIncomingStreams: 256
   disablePathMTUDiscovery: true
   disableStatelessReset: true

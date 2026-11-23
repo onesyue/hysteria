@@ -92,6 +92,7 @@ func TestServerConfig(t *testing.T) {
 			InitConnectionReceiveWindow: 77883,
 			MaxConnectionReceiveWindow:  77884,
 			MaxIdleTimeout:              999 * time.Second,
+			KeepAlivePeriod:             4 * time.Second,
 			MaxIncomingStreams:          256,
 			DisablePathMTUDiscovery:     true,
 			DisableStatelessReset:       true,
@@ -236,6 +237,17 @@ func TestServerConfig(t *testing.T) {
 			ForceHTTPS:  true,
 		},
 	})
+}
+
+func TestServerKeepAlivePeriod(t *testing.T) {
+	for _, period := range []time.Duration{0, 4 * time.Second} {
+		t.Run(period.String(), func(t *testing.T) {
+			cfg := serverConfig{QUIC: serverConfigQUIC{KeepAlivePeriod: period}}
+			var coreConfig server.Config
+			assert.NoError(t, cfg.fillQUICConfig(&coreConfig))
+			assert.Equal(t, period, coreConfig.QUICConfig.KeepAlivePeriod)
+		})
+	}
 }
 
 func TestServerFillCongestionConfig(t *testing.T) {
