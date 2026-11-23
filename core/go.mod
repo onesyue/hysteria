@@ -10,7 +10,7 @@ require (
 	golang.org/x/time v0.15.0
 )
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.65.1-0.20261122204548-a13262e10709
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.65.1-yue.1
 
 require (
 	github.com/andybalholm/brotli v1.2.7 // indirect
