@@ -180,12 +180,14 @@ type CongestionConfig struct {
 // The returned byte slice, if not empty, will be sent to the remote before proxying - this is
 // mainly for "putting back" the content read from the client for sniffing, etc.
 // Return a non-nil error to abort the connection.
-// Note that due to the current architectural limitations, it can only inspect the first packet
-// of a UDP connection. It also cannot put back any data as the first packet is always sent as-is.
+// For UDP, the first packets of a session are held back until the hook is done with them:
+// UDP is called with all the packets held so far each time a new one arrives, and returns
+// false to wait for the next one. The hook must give up eventually, as held packets are only
+// sent (as-is, to the possibly modified reqAddr) once it returns true.
 type RequestHook interface {
 	Check(isUDP bool, reqAddr string) bool
 	TCP(stream HyStream, reqAddr *string) ([]byte, error)
-	UDP(data []byte, reqAddr *string) error
+	UDP(packets [][]byte, reqAddr *string) (done bool, err error)
 }
 
 // Outbound provides the implementation of how the server should connect to remote servers.
@@ -193,10 +195,19 @@ type RequestHook interface {
 // to make a "connected" UDP connection that does not accept packets from other addresses.
 // In fact, the default implementation simply uses net.ListenUDP for a "full-cone" behavior.
 // CheckUDP is used to check if a UDP packet to reqAddr is permitted (useful for e.g. ACL).
+// info describes the client connection the request comes from, and is never nil.
 type Outbound interface {
-	TCP(reqAddr string) (net.Conn, error)
-	UDP(reqAddr string) (UDPConn, error)
-	CheckUDP(reqAddr string) error
+	TCP(info *RequestInfo, reqAddr string) (net.Conn, error)
+	UDP(info *RequestInfo, reqAddr string) (UDPConn, error)
+	CheckUDP(info *RequestInfo, reqAddr string) error
+}
+
+// RequestInfo carries per-connection context to outbounds.
+// The same RequestInfo may be shared by multiple requests from the same client
+// connection, so implementations must not modify it.
+type RequestInfo struct {
+	AuthID     string   // ID returned by the Authenticator
+	ClientAddr net.Addr // Remote address of the client's QUIC connection
 }
 
 // AuthenticatedOutbound is an optional extension of Outbound (yue fork).
@@ -212,11 +223,11 @@ type AuthenticatedOutbound interface {
 
 // dialOutboundTCP dials reqAddr for the authenticated client authID through
 // the AuthenticatedOutbound extension when ob has it, else through ob.TCP.
-func dialOutboundTCP(ob Outbound, authID, reqAddr string) (net.Conn, error) {
+func dialOutboundTCP(ob Outbound, info *RequestInfo, reqAddr string) (net.Conn, error) {
 	if ao, ok := ob.(AuthenticatedOutbound); ok {
-		return ao.TCPAuthenticated(authID, reqAddr)
+		return ao.TCPAuthenticated(info.AuthID, reqAddr)
 	}
-	return ob.TCP(reqAddr)
+	return ob.TCP(info, reqAddr)
 }
 
 // AuthenticatedUDPOutbound is an optional extension of Outbound (yue fork).
@@ -235,11 +246,11 @@ type AuthenticatedUDPOutbound interface {
 
 // dialOutboundUDP opens the session socket for authID through the
 // AuthenticatedUDPOutbound extension when ob has it, else through ob.UDP.
-func dialOutboundUDP(ob Outbound, authID, reqAddr string) (UDPConn, error) {
+func dialOutboundUDP(ob Outbound, info *RequestInfo, reqAddr string) (UDPConn, error) {
 	if ao, ok := ob.(AuthenticatedUDPOutbound); ok {
-		return ao.UDPAuthenticated(authID, reqAddr)
+		return ao.UDPAuthenticated(info.AuthID, reqAddr)
 	}
-	return ob.UDP(reqAddr)
+	return ob.UDP(info, reqAddr)
 }
 
 // UDPConn is like net.PacketConn, but uses string for addresses.
@@ -255,11 +266,11 @@ var defaultOutboundDialer = net.Dialer{
 	Timeout: 10 * time.Second,
 }
 
-func (o *defaultOutbound) TCP(reqAddr string) (net.Conn, error) {
+func (o *defaultOutbound) TCP(info *RequestInfo, reqAddr string) (net.Conn, error) {
 	return defaultOutboundDialer.Dial("tcp", reqAddr)
 }
 
-func (o *defaultOutbound) UDP(reqAddr string) (UDPConn, error) {
+func (o *defaultOutbound) UDP(info *RequestInfo, reqAddr string) (UDPConn, error) {
 	conn, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		return nil, err
@@ -267,7 +278,7 @@ func (o *defaultOutbound) UDP(reqAddr string) (UDPConn, error) {
 	return &defaultUDPConn{conn}, nil
 }
 
-func (o *defaultOutbound) CheckUDP(reqAddr string) error {
+func (o *defaultOutbound) CheckUDP(info *RequestInfo, reqAddr string) error {
 	return nil
 }
 

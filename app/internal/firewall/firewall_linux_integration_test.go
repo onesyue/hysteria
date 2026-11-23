@@ -47,7 +47,7 @@ func TestUDPPortRedirectIntegration(t *testing.T) {
 					runner := namespaceRunner{namespace: server}
 					cleanup, err := setupUDPPortRedirectWithRunner(runner,
 						&net.UDPAddr{IP: net.ParseIP(bind), Port: 41000},
-						eUtils.PortUnion{{41000, 41002}})
+						eUtils.PortUnion{{Start: 41000, End: 41002}})
 					require.NoError(t, err)
 					t.Cleanup(func() { require.NoError(t, cleanup.Close()) })
 

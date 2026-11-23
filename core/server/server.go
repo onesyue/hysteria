@@ -383,7 +383,15 @@ func (h *h3sHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.backgroundWG.Add(1)
 				go func() {
 					defer h.backgroundWG.Done()
-					udpIO := &udpIOImpl{Conn: h.conn, AuthID: id, TrafficLogger: h.config.TrafficLogger, RequestHook: h.config.RequestHook, Outbound: h.config.Outbound, Context: h.conn.Context()}
+					udpIO := &udpIOImpl{
+						Conn:          h.conn,
+						AuthID:        id,
+						TrafficLogger: h.config.TrafficLogger,
+						RequestHook:   h.config.RequestHook,
+						Outbound:      h.config.Outbound,
+						Context:       h.conn.Context(),
+						RequestInfo:   &RequestInfo{AuthID: id, ClientAddr: h.conn.RemoteAddr()},
+					}
 					sm := newUDPSessionManager(
 						udpIO,
 						&udpEventLoggerImpl{h.conn, id, h.config.EventLogger},
@@ -485,7 +493,10 @@ func (h *h3sHandler) handleTCPRequest(stream *utils.QStream, authID string) {
 	}
 	// Dial target
 	streamStats.State.Store(StreamStateConnecting)
-	tConn, err := dialOutboundTCP(h.config.Outbound, authID, reqAddr)
+	tConn, err := dialOutboundTCP(h.config.Outbound, &RequestInfo{
+		AuthID:     authID,
+		ClientAddr: h.conn.RemoteAddr(),
+	}, reqAddr)
 	if err != nil {
 		if !hooked {
 			_ = protocol.WriteTCPResponse(stream, false, err.Error())
@@ -560,6 +571,9 @@ type udpIOImpl struct {
 	RequestHook     RequestHook
 	Outbound        Outbound
 	CanAdmitSession func(uint32) bool
+	RequestInfo     *RequestInfo
+
+	lastAddr string // Address of the last message received
 }
 
 func (io *udpIOImpl) ReceiveMessage() (*protocol.UDPMessage, error) {
@@ -569,7 +583,7 @@ func (io *udpIOImpl) ReceiveMessage() (*protocol.UDPMessage, error) {
 			// Connection error, this will stop the session manager
 			return nil, err
 		}
-		udpMsg, err := protocol.ParseUDPMessage(msg)
+		udpMsg, err := protocol.ParseUDPMessageReuseAddr(msg, io.lastAddr)
 		if err != nil {
 			// Invalid message, this is fine - just wait for the next
 			continue
@@ -579,6 +593,7 @@ func (io *udpIOImpl) ReceiveMessage() (*protocol.UDPMessage, error) {
 		if io.CanAdmitSession != nil && !io.CanAdmitSession(udpMsg.SessionID) {
 			continue
 		}
+		io.lastAddr = udpMsg.Addr
 		if io.TrafficLogger != nil {
 			if vl, isVerdict := io.TrafficLogger.(TrafficVerdictLogger); isVerdict {
 				// This loop is shared by every UDP session of the connection:
@@ -670,20 +685,20 @@ func (io *udpIOImpl) SendMessage(buf []byte, msg *protocol.UDPMessage) error {
 	return nil
 }
 
-func (io *udpIOImpl) Hook(data []byte, reqAddr *string) error {
+func (io *udpIOImpl) Hook(packets [][]byte, reqAddr *string) (bool, error) {
 	if io.RequestHook != nil && io.RequestHook.Check(true, *reqAddr) {
-		return io.RequestHook.UDP(data, reqAddr)
+		return io.RequestHook.UDP(packets, reqAddr)
 	} else {
-		return nil
+		return true, nil
 	}
 }
 
 func (io *udpIOImpl) UDP(reqAddr string) (UDPConn, error) {
-	return dialOutboundUDP(io.Outbound, io.AuthID, reqAddr)
+	return dialOutboundUDP(io.Outbound, io.RequestInfo, reqAddr)
 }
 
 func (io *udpIOImpl) CheckUDP(reqAddr string) error {
-	return io.Outbound.CheckUDP(reqAddr)
+	return io.Outbound.CheckUDP(io.RequestInfo, reqAddr)
 }
 
 type udpEventLoggerImpl struct {

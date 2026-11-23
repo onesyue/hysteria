@@ -16,9 +16,11 @@ import (
 
 type limitedUDPOutbound struct{ opened, closed atomic.Int32 }
 
-func (o *limitedUDPOutbound) TCP(addr string) (net.Conn, error) { return net.Dial("tcp", addr) }
-func (o *limitedUDPOutbound) CheckUDP(string) error             { return nil }
-func (o *limitedUDPOutbound) UDP(string) (server.UDPConn, error) {
+func (o *limitedUDPOutbound) TCP(_ *server.RequestInfo, addr string) (net.Conn, error) {
+	return net.Dial("tcp", addr)
+}
+func (o *limitedUDPOutbound) CheckUDP(*server.RequestInfo, string) error { return nil }
+func (o *limitedUDPOutbound) UDP(*server.RequestInfo, string) (server.UDPConn, error) {
 	c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		return nil, err

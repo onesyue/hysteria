@@ -190,35 +190,43 @@ func (m *UDPMessage) Serialize(buf []byte) int {
 }
 
 func ParseUDPMessage(msg []byte) (*UDPMessage, error) {
-	// Datagram hot path: decode the fixed header directly instead of wrapping
-	// every packet in bytes.Buffer and invoking reflection-based binary.Read.
+	return ParseUDPMessageReuseAddr(msg, "")
+}
+
+// ParseUDPMessageReuseAddr is like ParseUDPMessage, but uses lastAddr as the
+// address when the two are equal, instead of allocating a new string.
+func ParseUDPMessageReuseAddr(msg []byte, lastAddr string) (*UDPMessage, error) {
+	if len(msg) == 0 {
+		return nil, io.EOF
+	}
 	if len(msg) < 8 {
-		if len(msg) == 0 {
-			return nil, io.EOF
-		}
 		return nil, io.ErrUnexpectedEOF
 	}
-	lAddr, varintLen, err := quicvarint.Parse(msg[8:])
+	lAddr, n, err := quicvarint.Parse(msg[8:])
 	if err != nil {
 		return nil, err
 	}
 	if lAddr == 0 || lAddr > MaxMessageLength {
 		return nil, errors.ProtocolError{Message: "invalid address length"}
 	}
-	addrStart := 8 + varintLen
-	addrEnd := addrStart + int(lAddr)
-	if len(msg) <= addrEnd {
+	bs := msg[8+n:]
+	if len(bs) <= int(lAddr) {
 		// We use <= instead of < here as we expect at least one byte of data after the address
 		return nil, errors.ProtocolError{Message: "invalid message length"}
 	}
-	return &UDPMessage{
+	m := &UDPMessage{
 		SessionID: binary.BigEndian.Uint32(msg),
 		PacketID:  binary.BigEndian.Uint16(msg[4:]),
 		FragID:    msg[6],
 		FragCount: msg[7],
-		Addr:      string(msg[addrStart:addrEnd]),
-		Data:      msg[addrEnd:],
-	}, nil
+		Data:      bs[lAddr:],
+	}
+	if string(bs[:lAddr]) == lastAddr {
+		m.Addr = lastAddr
+	} else {
+		m.Addr = string(bs[:lAddr])
+	}
+	return m, nil
 }
 
 // varintPut is like quicvarint.Append, but instead of appending to a slice,

@@ -3,10 +3,11 @@
 ## Baseline
 
 - Canonical repository: `https://github.com/apernet/hysteria`
-- Canonical release: `app/v2.12.3`, `core/v2.12.3`, `extras/v2.12.3`
-- Exact base commit: `e1366b173ccf5706e1e4630fe8aa654a4b574085`
-  (`feat: add ECH key generation command`), merged on 2026-09-22. Previous
-  bases: `62d1016707af21b91e5fb6070311d9f016ff2754` (2026-09-14),
+- Canonical release: `app/v2.14.0`, `core/v2.14.0`, `extras/v2.14.0`
+- Exact base commit: `c2b181e0b0e72b077e4b0b7297735af14d1f9929`
+  (`perf: reduce per-packet overhead in UDP forwarding`). Previous bases:
+  `e1366b173ccf5706e1e4630fe8aa654a4b574085` (2.12.3),
+  `62d1016707af21b91e5fb6070311d9f016ff2754` and
   `619a6f856b69fb7ee6a7a379e810e68b84004605`.
 
 The Yue branch retains the upstream 2.12 Mimic fixes, Unix-domain masquerade
@@ -94,7 +95,7 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    request is dialled through it with the authenticated client's ID, so an
    embedder can make per-user dial decisions (yue-node gives each user a
    stable IPv6 source address of their own). Outbounds without the extension
-   keep upstream's `TCP(reqAddr)`; UDP is unchanged. A real QUIC round trip
+   receive upstream's `TCP(info, reqAddr)`, including the client address. A real QUIC round trip
    covers both shapes (`core/internal/integration_tests/authenticated_outbound_yue_test.go`).
    Ships in `v2.12.3-yue.6`.
 
@@ -105,10 +106,10 @@ changes supersede the equivalent older Yue commits and were not duplicated.
    destination of the session). yue-node wraps the returned `UDPConn` to
    attribute outgoing datagrams to a user for BitTorrent/DHT/uTP detection and
    per-user fan-out limits (fair-use endgame L4). Independent of the TCP
-   extension; outbounds without it keep upstream's `UDP(reqAddr)`. A real QUIC
+   extension. Other outbounds receive upstream's `UDP(info, reqAddr)`. A real QUIC
    round trip over two destinations covers both shapes
    (`core/internal/integration_tests/authenticated_udp_outbound_yue_test.go`).
-   Not yet tagged: the next tag (`core/v2.12.3-yue.7`) carries it.
+   First shipped in `core/v2.12.3-yue.7`.
 
 ## Upstream sync 2026-09-14 (`core/v2.12.2-yue.3`, `extras/v2.12.2-yue.3`)
 
@@ -147,15 +148,11 @@ the complete core race suite passes with both sides corrected.
 
 ## quic-go dependency order
 
-All three modules, the workspace and CI checkout refs use signed
-`github.com/onesyue/quic-go v0.62.0-yue.9` at
-`d16e3afb4b22129eca62729369ad6f4ef396dd07`. This is the maintained private fork;
-CI uses its existing authenticated source checkout. Remote tag verification and
-authenticated native Go module download confirm the exact commit and checksums.
-No dependency is fetched from an uncommitted local replacement in the release.
-
-Matching `core/v2.12.3-yue.5` and `extras/v2.12.3-yue.5` tags identify this source
-and dependency closure; prior immutable tags remain available.
+The three module manifests and `go.work` select the same onesyue/quic-go
+revision. The test, standalone build and Docker workflows check out its full
+commit. `scripts/ci/check_supply_chain.py` verifies the version, checksums
+and checkout refs. The 2.14 fork requires the producer based on quic-go 0.65.
+Prior module tags retain their original dependency pins.
 
 yue.7 (2026-10-04) adds only the backport of canonical upstream #5876:
 `quicvarint.Read`/`Peek` use data returned together with an error (for example
