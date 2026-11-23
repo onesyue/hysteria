@@ -2,8 +2,8 @@ github.com/andybalholm/brotli v1.2.7 h1:UgafRPGMam5ySHfRkhthMqOFA6IFoeF3D7mWIDLj
 github.com/andybalholm/brotli v1.2.7/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/klauspost/compress v1.20.2 h1:v5tiZvm1KGLyg5d5oXdXe3lsSPrbEUiKoXGia//I7Qo=
 github.com/klauspost/compress v1.20.2/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
-github.com/onesyue/quic-go v0.65.1-0.20261122204548-a13262e10709 h1:5zFIhZT6u08a4bvTJK7zlScsGFTJn5Bs/llJNbnj2Fc=
-github.com/onesyue/quic-go v0.65.1-0.20261122204548-a13262e10709/go.mod h1:JRW1zoWtexvwFeXq1aXHxzaLVf6NrPfIomYRHw9YlX8=
+github.com/onesyue/quic-go v0.65.1-yue.1 h1:PakWfZivnEvnlMLIinntBoQ7vYoFd8cvv1iX5gVtX54=
+github.com/onesyue/quic-go v0.65.1-yue.1/go.mod h1:cF4/erUR9oyPMZMUi9bpHAfo3vkzZHS8WmUN6swb4tw=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0 h1:APacT+iIaNF6fd8AGEiN3bT/Jtkd2jz4v4TzM7MFjy0=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0/go.mod h1:3IOHRbJIc+L6YKMwfDtJAM9Vj9k0YY4muhuyUYk5tbk=
 github.com/quic-go/qpack v0.6.0 h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=

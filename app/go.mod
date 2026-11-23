@@ -102,4 +102,4 @@ replace github.com/apernet/hysteria/core/v2 => ../core
 
 replace github.com/apernet/hysteria/extras/v2 => ../extras
 
-replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.65.1-0.20261122204548-a13262e10709
+replace github.com/apernet/quic-go => github.com/onesyue/quic-go v0.65.1-yue.1

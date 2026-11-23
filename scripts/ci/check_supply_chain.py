@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 ERRORS: list[str] = []
-QUIC_GO_VERSION = "v0.65.1-0.20261122204548-a13262e10709"
-QUIC_GO_COMMIT = "a13262e107094ebfba36c0fff2ac6eeffacb55bf"
+QUIC_GO_VERSION = "v0.65.1-yue.1"
+QUIC_GO_COMMIT = "6e04cc5812b7d1041bd0382c953149076e1a5def"
 QUIC_GO_MODULES = ("app", "core", "extras")
 GO_VERSION = "1.27.2"
 GO_BUILDER_IMAGE = (
