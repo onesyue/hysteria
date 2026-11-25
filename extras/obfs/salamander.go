@@ -1,6 +1,7 @@
 package obfs
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"math/rand"
 	"net"
@@ -65,9 +66,7 @@ func (o *salamanderObfuscator) Obfuscate(in, out []byte) int {
 	_, _ = o.RandSrc.Read(out[:smSaltLen])
 	key := o.keyLocked(out[:smSaltLen])
 	o.lk.Unlock()
-	for i, c := range in {
-		out[i+smSaltLen] = c ^ key[i%smKeyLen]
-	}
+	xorPacket(out[smSaltLen:outLen], in, &key)
 	return outLen
 }
 
@@ -79,13 +78,20 @@ func (o *salamanderObfuscator) Deobfuscate(in, out []byte) int {
 	o.lk.Lock()
 	key := o.keyLocked(in[:smSaltLen])
 	o.lk.Unlock()
-	for i, c := range in[smSaltLen:] {
-		out[i] = c ^ key[i%smKeyLen]
-	}
+	xorPacket(out[:outLen], in[smSaltLen:], &key)
 	return outLen
 }
 
 func (o *salamanderObfuscator) keyLocked(salt []byte) [smKeyLen]byte {
 	copy(o.keyInput[len(o.PSK):], salt[:smSaltLen])
 	return blake2b.Sum256(o.keyInput)
+}
+
+// xorPacket applies the same digest to each consecutive block of the packet.
+func xorPacket(out, in []byte, key *[smKeyLen]byte) {
+	for len(in) >= smKeyLen {
+		subtle.XORBytes(out[:smKeyLen], in[:smKeyLen], key[:])
+		out, in = out[smKeyLen:], in[smKeyLen:]
+	}
+	subtle.XORBytes(out, in, key[:len(in)])
 }
